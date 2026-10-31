@@ -120,19 +120,23 @@ export default function CourseDrafts({ courseId, version = 0, onPublished }) {
 
   const count = page?.totalElements ?? 0
   const disabled = busy !== null
+  // Documents whose last AI analysis covered only part of the text: some of their assignments may be missing here.
+  const partialSources = [...new Map((page?.content ?? [])
+    .filter((draft) => draft.sourceAnalysisPartial && draft.sourceDocumentId)
+    .map((draft) => [draft.sourceDocumentId, draft.sourceDocumentName ?? 'Документ'])).entries()]
 
   return (
-    <section id="drafts" className="scroll-mt-20 rounded-2xl border border-violet-200 dark:border-violet-500/30 bg-white dark:bg-slate-900 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-violet-100 dark:border-violet-500/20 px-5 py-3.5">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-          <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" /> Черновики от ИИ ({count})
+    <section id="drafts" className="scroll-mt-20 rounded-card border border-primary/25 bg-surface shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/25 px-5 py-3.5">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+          <Sparkles className="h-4 w-4 text-primary-fg" /> Черновики от ИИ ({count})
         </h2>
         {count > 1 && (
           <button
             type="button"
             onClick={publishAll}
             disabled={disabled}
-            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:opacity-60"
+            className="flex items-center gap-1.5 rounded-control bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary transition hover:bg-primary-hover disabled:opacity-60"
           >
             {busy === 'all' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
             Опубликовать все
@@ -143,19 +147,36 @@ export default function CourseDrafts({ courseId, version = 0, onPublished }) {
         {error ? (
           <ErrorState title="Не удалось загрузить черновики" message={error} onRetry={retry} />
         ) : !page ? (
-          <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500 dark:text-slate-400">
+          <div className="flex items-center justify-center gap-2 py-6 text-sm text-fg-muted">
             <Loader2 className="h-4 w-4 animate-spin" /> Загрузка…
           </div>
         ) : page.content.length === 0 ? (
-          <p className="py-2 text-center text-sm text-slate-500 dark:text-slate-400">
+          <p className="py-2 text-center text-sm text-fg-muted">
             Черновиков нет. Задания, которые ИИ найдёт в новых силлабусах и заданиях, появятся здесь — студенты увидят
             их только после публикации.
           </p>
         ) : (
           <>
-            <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
+            <p className="mb-3 text-xs text-fg-secondary">
               Студенты пока не видят эти задания. Проверьте название, срок и требования, затем опубликуйте.
             </p>
+            {partialSources.length > 0 && (
+              <div role="status" className="mb-3 flex gap-2 rounded-xl border border-warning/30 bg-warning-soft px-3 py-2.5 text-xs text-warning-fg">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <div>
+                  <p className="font-semibold">ИИ обработал документ не полностью — проверьте задания вручную</p>
+                  <p className="mt-0.5">
+                    Часть текста осталась без ответа ИИ, поэтому некоторые задания могли не попасть в черновики:{' '}
+                    {partialSources.map(([id, name], index) => (
+                      <span key={id}>
+                        {index > 0 && ', '}
+                        <Link to={`/documents/${id}`} className="font-medium underline underline-offset-2">{name}</Link>
+                      </span>
+                    ))}
+                  </p>
+                </div>
+              </div>
+            )}
             <ul className="space-y-2">
               {page.content.map((draft) => (
                 <DraftItem
@@ -172,7 +193,7 @@ export default function CourseDrafts({ courseId, version = 0, onPublished }) {
               ))}
             </ul>
             {!page.last && (
-              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-3 text-xs text-fg-muted">
                 Показаны первые {page.content.length} из {page.totalElements}; остальные появятся после публикации этих.
               </p>
             )}
@@ -190,17 +211,17 @@ const similarTo = (draft) => `«${draft.duplicateOfTitle}»${draft.duplicateOfDe
 
 function DraftItem({ draft, courseId, busy, disabled, onPublish, onEdit, onDelete, onNotDuplicate }) {
   return (
-    <li className="rounded-xl border border-slate-200 dark:border-slate-800 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="break-words text-sm font-medium text-slate-900 dark:text-white">{draft.title}</p>
+    <li className="rounded-card border border-line p-3.5">
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2.5">
+        <div className="min-w-0 flex-1 basis-64">
+          <p className="break-words text-sm font-medium text-fg">{draft.title}</p>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             {draft.deadline ? (
-              <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300">
+              <span className="inline-flex items-center gap-1 tabular-nums text-fg-secondary">
                 <CalendarClock className="h-3.5 w-3.5" /> {formatDateTime(draft.deadline)}
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 font-medium text-amber-700 dark:text-amber-300">
+              <span className="inline-flex items-center gap-1 font-medium text-warning-fg">
                 <AlertTriangle className="h-3.5 w-3.5" /> Без дедлайна
               </span>
             )}
@@ -208,7 +229,7 @@ function DraftItem({ draft, courseId, busy, disabled, onPublish, onEdit, onDelet
               <Link
                 to={`/documents/${draft.sourceDocumentId}`}
                 state={{ from: `/courses/${courseId}` }}
-                className="inline-flex min-w-0 items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline"
+                className="inline-flex min-w-0 items-center gap-1 text-primary-fg hover:underline"
                 title={draft.sourceDocumentName}
               >
                 <FileText className="h-3.5 w-3.5 shrink-0" />
@@ -217,12 +238,12 @@ function DraftItem({ draft, courseId, busy, disabled, onPublish, onEdit, onDelet
             )}
           </div>
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <button
             type="button"
             onClick={() => onPublish(draft)}
             disabled={disabled}
-            className="flex items-center gap-1.5 rounded-lg border border-violet-200 dark:border-violet-500/30 px-2.5 py-1.5 text-xs font-medium text-violet-700 dark:text-violet-300 transition hover:bg-violet-50 dark:hover:bg-violet-500/10 disabled:opacity-60"
+            className="flex items-center gap-1.5 rounded-control border border-primary/25 px-2.5 py-1.5 text-xs font-medium text-primary-fg transition hover:bg-primary-soft disabled:opacity-60"
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Опубликовать
           </button>
@@ -232,7 +253,7 @@ function DraftItem({ draft, courseId, busy, disabled, onPublish, onEdit, onDelet
             disabled={disabled}
             aria-label={`Изменить черновик «${draft.title}»`}
             title="Изменить название, требования или дедлайн"
-            className="flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60"
+            className="flex items-center gap-1.5 rounded-control border border-line-strong px-2.5 py-1.5 text-xs font-medium text-fg transition hover:bg-page-alt disabled:opacity-60"
           >
             <Pencil className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Изменить</span>
           </button>
@@ -242,17 +263,17 @@ function DraftItem({ draft, courseId, busy, disabled, onPublish, onEdit, onDelet
             disabled={disabled}
             aria-label={`Удалить черновик «${draft.title}»`}
             title="Удалить черновик"
-            className="flex items-center gap-1.5 rounded-lg border border-red-200 dark:border-red-500/30 px-2.5 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 transition hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-60"
+            className="flex items-center gap-1.5 rounded-control border border-danger/30 px-2.5 py-1.5 text-xs font-medium text-danger-fg transition hover:bg-danger-soft disabled:opacity-60"
           >
             <Trash2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Удалить</span>
           </button>
         </div>
       </div>
       {draft.description && (
-        <p className="mt-2 whitespace-pre-line break-words text-xs text-slate-600 dark:text-slate-300">{draft.description}</p>
+        <p className="mt-2 whitespace-pre-line break-words text-xs text-fg-secondary">{draft.description}</p>
       )}
       {draft.duplicateOfId && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-control bg-warning-soft px-3 py-2 text-xs text-warning-fg">
           <span className="flex min-w-0 items-center gap-1.5">
             <Copy className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 break-words">Похоже на: {similarTo(draft)}</span>
@@ -262,7 +283,7 @@ function DraftItem({ draft, courseId, busy, disabled, onPublish, onEdit, onDelet
               type="button"
               onClick={() => onDelete(draft)}
               disabled={disabled}
-              className="rounded-md border border-red-200 dark:border-red-500/30 bg-white dark:bg-slate-900 px-2 py-1 font-medium text-red-600 dark:text-red-400 transition hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-60"
+              className="rounded-md border border-danger/30 bg-surface px-2 py-1 font-medium text-danger-fg transition hover:bg-danger-soft disabled:opacity-60"
             >
               Это дубль — удалить черновик
             </button>
@@ -270,7 +291,7 @@ function DraftItem({ draft, courseId, busy, disabled, onPublish, onEdit, onDelet
               type="button"
               onClick={() => onNotDuplicate(draft)}
               disabled={disabled}
-              className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60"
+              className="rounded-md border border-line-strong bg-surface px-2 py-1 font-medium text-fg transition hover:bg-page-alt disabled:opacity-60"
             >
               Это другое задание
             </button>

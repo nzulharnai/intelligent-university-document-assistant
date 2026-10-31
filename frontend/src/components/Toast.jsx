@@ -22,16 +22,16 @@ export default function Toast({ toast, onClose }) {
       <div
         key={toast.id}
         role={isError ? 'alert' : 'status'}
-        className={`animate-step-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border bg-white dark:bg-slate-900 p-4 shadow-lg ${
-          isError ? 'border-red-200 dark:border-red-500/30' : 'border-emerald-200 dark:border-emerald-500/30'
+        className={`animate-step-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-card border border-l-4 border-line bg-surface p-4 shadow-card ${
+          isError ? 'border-l-danger' : 'border-l-success'
         }`}
       >
-        <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${isError ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
-        <p className="min-w-0 flex-1 break-words text-sm text-slate-700 dark:text-slate-200">{toast.message}</p>
+        <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${isError ? 'text-danger' : 'text-success'}`} aria-hidden="true" />
+        <p className="min-w-0 flex-1 break-words text-sm text-fg">{toast.message}</p>
         <button
           type="button"
           onClick={onClose}
-          className="rounded p-0.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300"
+          className="rounded-md p-1 text-fg-muted transition hover:bg-page-alt hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label="Закрыть уведомление"
         >
           <X className="h-4 w-4" />

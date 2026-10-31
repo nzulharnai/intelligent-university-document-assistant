@@ -3,6 +3,7 @@ package com.university.docassistant.service;
 import com.university.docassistant.dto.SubmissionDtos.SubmissionResponse;
 import com.university.docassistant.entity.AssignmentStatus;
 import com.university.docassistant.entity.Course;
+import com.university.docassistant.entity.TaskStatus;
 import com.university.docassistant.entity.TaskSubmission;
 import com.university.docassistant.entity.User;
 import com.university.docassistant.exception.ApiException;
@@ -10,6 +11,7 @@ import com.university.docassistant.exception.ErrorCodes;
 import com.university.docassistant.repository.AssignmentRepository;
 import com.university.docassistant.repository.CourseRepository;
 import com.university.docassistant.repository.TaskRepository;
+import com.university.docassistant.repository.TaskRepository.SubmitRules;
 import com.university.docassistant.repository.TaskRepository.TaskAccess;
 import com.university.docassistant.repository.TaskSubmissionRepository;
 import com.university.docassistant.repository.TaskSubmissionRepository.SubmissionAccess;
@@ -21,10 +23,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -33,7 +39,10 @@ import java.util.Objects;
  * Students hand in their work for a task (Moodle-style submission); this is the only upload a STUDENT may make.
  * Submit: the task's own student, while still enrolled in its course, and only for tasks that come from a course
  * assignment. Read: that student, the course's teacher, or ADMIN. Submissions never become course documents, so
- * they stay out of document lists, search and Q&A retrieval.
+ * they stay out of document lists, search and Q&A retrieval. A submission makes the task SUBMITTED, with the
+ * submission time (app time zone) and whether it came after the deadline; the student cannot set that by hand.
+ * Accepted while the assignment is ACTIVE and the task not GRADED; after the deadline only if the assignment allows
+ * late work. Each hand-in is a new version; earlier versions stay as history.
  */
 @Slf4j
 @Service
@@ -41,6 +50,7 @@ import java.util.Objects;
 public class SubmissionService {
 
     static final int MAX_FILES_PER_SUBMISSION = 10;
+    private static final DateTimeFormatter DEADLINE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
     private final TaskSubmissionRepository submissionRepository;
     private final TaskRepository taskRepository;
@@ -49,13 +59,16 @@ public class SubmissionService {
     private final AccessControlService access;
     private final StorageService storageService;
     private final AuditService auditService;
+    private final TransactionTemplate transactionTemplate;
+    private final Clock clock;
 
     public record SubmissionContent(SubmissionAccess submission, Resource content) {
     }
 
     /**
-     * Stores the files as one submission. All-or-nothing: an unsupported, empty or oversized file rejects the whole
-     * request, so a student never ends up with half a submission. Rights are checked before any file is read.
+     * Stores the files as one submission: the task's next version. All-or-nothing: an unsupported, empty or oversized
+     * file rejects the whole request, so a student never ends up with half a submission. Rights and the deadline
+     * are checked before any file is read, and again under the task's row lock before anything is saved.
      */
     public List<SubmissionResponse> submit(Long taskId, List<MultipartFile> files, String email) {
         User student = access.currentUser(email);
@@ -78,13 +91,12 @@ public class SubmissionService {
             auditService.record(student.getEmail(), AuditService.ACCESS_DENIED, "SUBMIT_TASK on task " + taskId);
             throw ApiException.forbidden(ErrorCodes.COURSE_NOT_ENROLLED, "You are not enrolled in this course");
         }
-        if (assignmentRepository.findStatusById(task.assignmentId()).orElse(null) == AssignmentStatus.CLOSED) {
-            throw ApiException.conflict(ErrorCodes.ASSIGNMENT_CLOSED, "Задание закрыто, новые решения не принимаются");
-        }
+        LocalDateTime now = LocalDateTime.now(clock);
+        checkAccepting(rulesOf(taskId), now);
 
         List<PreparedFile> prepared = prepare(files);
         List<String> storedFileNames = new ArrayList<>();
-        List<Long> ids;
+        Submitted result;
         try {
             List<TaskSubmission> rows = new ArrayList<>();
             for (PreparedFile file : prepared) {
@@ -97,18 +109,69 @@ public class SubmissionService {
                         .storedFileName(storedFileName)
                         .contentType(file.contentType())
                         .fileSize((long) file.content().length)
+                        .submittedAt(now)
                         .build());
             }
-            ids = submissionRepository.saveAll(rows).stream().map(TaskSubmission::getId).toList();
+            // The rows and the task's new status commit together; the files are already stored (removed on failure).
+            result = transactionTemplate.execute(status -> {
+                taskRepository.lockById(taskId);
+                boolean late = checkAccepting(rulesOf(taskId), now);
+                int version = submissionRepository.findMaxVersion(taskId) + 1;
+                rows.forEach(row -> row.setVersion(version));
+                List<Long> saved = submissionRepository.saveAll(rows).stream().map(TaskSubmission::getId).toList();
+                if (taskRepository.markSubmitted(taskId, now, late) == 0) {
+                    throw alreadyGraded();
+                }
+                return new Submitted(saved, version, late);
+            });
         } catch (RuntimeException ex) {
             storedFileNames.forEach(storageService::delete);
             throw ex;
         }
-        auditService.record(student.getEmail(), AuditService.TASK_SUBMITTED,
-                ids.size() + " file(s) for task " + taskId + " (assignment " + task.assignmentId() + ")");
-        log.info("Student {} submitted {} file(s) for task {} in course {}",
-                student.getEmail(), ids.size(), taskId, task.courseId());
-        return submissionRepository.findViewsByIdIn(ids);
+        auditService.record(student.getEmail(), AuditService.TASK_SUBMITTED, "version " + result.version() + ", "
+                + result.ids().size() + " file(s) for task " + taskId + " (assignment " + task.assignmentId() + ")"
+                + (result.late() ? ", late" : ""));
+        log.info("Student {} submitted version {} ({} file(s){}) for task {} in course {}", student.getEmail(),
+                result.version(), result.ids().size(), result.late() ? ", late" : "", taskId, task.courseId());
+        return submissionRepository.findViewsByIdIn(result.ids());
+    }
+
+    private record Submitted(List<Long> ids, int version, boolean late) {
+    }
+
+    private SubmitRules rulesOf(Long taskId) {
+        return taskRepository.findSubmitRulesById(taskId)
+                .orElseThrow(() -> ApiException.notFound(ErrorCodes.TASK_NOT_FOUND, "Task not found"));
+    }
+
+    /**
+     * Whether a hand-in at {@code now} is accepted, and if so whether it is late. 409 ASSIGNMENT_CLOSED unless the
+     * assignment is ACTIVE; 400 SUBMISSION_ALREADY_GRADED for graded work; after the deadline 400
+     * SUBMISSION_DEADLINE_PASSED unless the assignment allows late work.
+     */
+    static boolean checkAccepting(SubmitRules rules, LocalDateTime now) {
+        if (rules.assignmentStatus() != AssignmentStatus.ACTIVE) {
+            throw ApiException.conflict(ErrorCodes.ASSIGNMENT_CLOSED, "Задание закрыто, новые решения не принимаются");
+        }
+        if (rules.status() == TaskStatus.GRADED) {
+            throw alreadyGraded();
+        }
+        boolean late = isLate(rules.deadline(), now);
+        if (late && !rules.allowLate()) {
+            throw ApiException.badRequest(ErrorCodes.SUBMISSION_DEADLINE_PASSED, "Срок сдачи истёк "
+                    + DEADLINE_FORMAT.format(rules.deadline()) + ", задание не принимает работы после срока");
+        }
+        return late;
+    }
+
+    /** Late means strictly after the deadline: at the deadline itself the work is still on time. */
+    static boolean isLate(LocalDateTime deadline, LocalDateTime now) {
+        return deadline != null && now.isAfter(deadline);
+    }
+
+    private static ApiException alreadyGraded() {
+        return ApiException.badRequest(ErrorCodes.SUBMISSION_ALREADY_GRADED,
+                "Работа уже оценена, сдать её заново нельзя");
     }
 
     /** Submissions of one task, newest first: for its student, the course's teacher or ADMIN. */

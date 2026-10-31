@@ -52,7 +52,7 @@ class CourseJoinTest {
     private final AccessControlService access = new AccessControlService(users, courses, mock(DocumentRepository.class),
             enrollments, audit);
     private final CourseService service = new CourseService(courses, enrollments, mock(TaskRepository.class), users,
-            assignments, access, audit, new JoinAttemptLimiter(clock));
+            assignments, access, audit, new JoinAttemptLimiter(clock), mock(CoursePrivacyRemask.class));
 
     @BeforeEach
     void setUp() {

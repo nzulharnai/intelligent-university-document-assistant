@@ -106,13 +106,17 @@ public class DocumentController {
                 documentService.uploadBatch(archive, category, visibility, courseId, principal.getUsername()));
     }
 
-    /** Documents of the user's courses, optionally only those of one course ({@code ?courseId=}). */
+    /**
+     * Documents of the user's courses, optionally only those of one course ({@code ?courseId=}); {@code ?needsReview=true}
+     * keeps those the AI or the OCR failed on ("Требуют проверки"), for the course teacher and ADMIN.
+     */
     @GetMapping
     public PageResponse<DocumentResponse> list(
             @RequestParam(value = "courseId", required = false) Long courseId,
+            @RequestParam(value = "needsReview", defaultValue = "false") boolean needsReview,
             @PageableDefault(size = 20, sort = "uploadedAt", direction = Sort.Direction.DESC) Pageable pageable,
             @AuthenticationPrincipal UserDetails principal) {
-        return documentService.list(principal.getUsername(), courseId,
+        return documentService.list(principal.getUsername(), courseId, needsReview,
                 SortValidator.requireSortable(pageable, SORTABLE_FIELDS));
     }
 
@@ -197,7 +201,7 @@ public class DocumentController {
 
         // Always an attachment: user-supplied content (e.g. HTML) must never render inline on our origin.
         ContentDisposition disposition = ContentDisposition.attachment()
-                .filename(document.getOriginalFileName(), StandardCharsets.UTF_8)
+                .filename(result.fileName(), StandardCharsets.UTF_8)
                 .build();
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(document.getContentType()))
@@ -218,7 +222,7 @@ public class DocumentController {
         }
 
         ContentDisposition disposition = ContentDisposition.inline()
-                .filename(document.getOriginalFileName(), StandardCharsets.UTF_8)
+                .filename(result.fileName(), StandardCharsets.UTF_8)
                 .build();
         return ResponseEntity.ok()
                 .contentType(contentType)

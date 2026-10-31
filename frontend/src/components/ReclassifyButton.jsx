@@ -6,9 +6,9 @@ import { isClassifying } from '../utils/documentStatus'
 
 const STYLES = {
   // Matches the action buttons of the vault table.
-  small: 'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium',
+  small: 'flex items-center gap-1.5 rounded-control border px-2.5 py-1.5 text-xs font-medium',
   // Matches the document page header buttons.
-  large: 'flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium',
+  large: 'flex items-center gap-2 rounded-control border px-3.5 py-2 text-sm font-medium',
 }
 
 /**
@@ -43,7 +43,7 @@ export default function ReclassifyButton({ doc, onUpdated, size = 'small', compa
       disabled={running}
       aria-label={compact ? label : undefined}
       title="ИИ заново определит тип документа; найденные задания сохранятся"
-      className={`${STYLES[size]} ${compact ? 'shrink-0' : ''} border-violet-200 dark:border-violet-500/30 text-violet-700 dark:text-violet-300 transition hover:bg-violet-50 dark:hover:bg-violet-500/10 disabled:opacity-60`}
+      className={`${STYLES[size]} ${compact ? 'shrink-0' : ''} border-primary/25 text-primary-fg transition hover:bg-primary-soft disabled:opacity-60`}
     >
       {running ? <Loader2 className={`${icon} animate-spin`} /> : <RefreshCw className={icon} />}
       {compact ? <span className="hidden sm:inline">{label}</span> : label}

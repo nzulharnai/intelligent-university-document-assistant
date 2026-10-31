@@ -21,6 +21,8 @@ import java.util.Set;
  * a task (see AssignmentService).
  * The AI call runs outside any transaction (it can take a minute); only the final write is transactional.
  * Failures are logged and never propagate: a document is always kept, with or without tasks.
+ * A long text analyzed only in part (a chunk failed) still saves what was found and is marked as partial; its
+ * existing assignments the AI did not return are then kept, as they may sit in the part that failed.
  * EXAM_ANSWERS documents are never analyzed, however the analysis was requested.
  */
 @Slf4j
@@ -91,7 +93,8 @@ public class DocumentAnalysisService {
                 return;
             }
             int saved = saveAnalysis(source, analysis.get());
-            log.info("AI analysis of document {} found {} assignment(s) ({} ms)", documentId, saved,
+            log.info("AI analysis of document {} found {} assignment(s){} ({} ms)", documentId, saved,
+                    analysis.get().partial() ? ", partial: some parts of the text got no answer" : "",
                     System.currentTimeMillis() - started);
         } catch (RuntimeException ex) {
             log.warn("AI analysis of document {} failed", documentId, ex);
@@ -108,11 +111,12 @@ public class DocumentAnalysisService {
             }
             documentRepository.updateAnalysis(source.id(), analysis.summary(),
                     analysis.topics().isEmpty() ? null : String.join("\n", analysis.topics()),
-                    LocalDateTime.now());
+                    analysis.partial(), LocalDateTime.now());
             if (source.courseId() == null) {
                 return 0;
             }
-            return assignmentService.replaceFromDocument(source.id(), source.courseId(), analysis.tasks());
+            return assignmentService.replaceFromDocument(source.id(), source.courseId(), analysis.tasks(),
+                    !analysis.partial());
         });
         return saved == null ? 0 : saved;
     }

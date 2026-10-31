@@ -4,6 +4,7 @@ import api from '../api/axios'
 import { useToast } from '../context/ToastContext'
 import { formatDateTime } from '../utils/dates'
 import TaskItem from './TaskItem'
+import { buttonClass } from './ui/styles'
 
 const POLL_INTERVAL_MS = 3000
 const POLL_LIMIT = 40 // About two minutes; analysis of a long document can take a while.
@@ -90,7 +91,7 @@ export default function AnalysisPanel({ doc }) {
   }
   if (!analysis || !tasks) {
     return (
-      <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500 dark:text-slate-400">
+      <div className="flex items-center justify-center gap-2 py-16 text-sm text-fg-muted">
         <Loader2 className="h-4 w-4 animate-spin" /> Загрузка анализа…
       </div>
     )
@@ -103,13 +104,13 @@ export default function AnalysisPanel({ doc }) {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-violet-100 dark:border-violet-500/30 bg-gradient-to-br from-violet-50/80 to-indigo-50/60 dark:from-violet-500/10 dark:to-indigo-500/10 p-5">
+      <section className="rounded-card border border-primary/25 bg-primary-soft/60 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-              <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" /> Краткий анализ ИИ
+            <h3 className="flex items-center gap-2 text-base font-semibold text-fg">
+              <Sparkles className="h-4.5 w-4.5 text-primary" aria-hidden="true" /> Краткий анализ ИИ
             </h3>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-0.5 text-xs tabular-nums text-fg-muted">
               {analyzed ? `Обновлён ${formatDateTime(analysis.analyzedAt)}` : statusHint(analysis, examAnswers)}
             </p>
           </div>
@@ -119,7 +120,7 @@ export default function AnalysisPanel({ doc }) {
               onClick={startAnalysis}
               disabled={!canRun || running}
               title={!analysis.aiAvailable ? 'ИИ-ассистент не подключён' : !analysis.hasText ? 'Нет распознанного текста' : undefined}
-              className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:from-violet-500 hover:to-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+              className={buttonClass({ size: 'sm' })}
             >
               {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               {running ? 'Анализ выполняется…' : analyzed ? 'Проанализировать заново' : 'Запустить анализ'}
@@ -128,14 +129,14 @@ export default function AnalysisPanel({ doc }) {
         </div>
 
         {examAnswers && (
-          <p className="mt-3 flex items-start gap-2 rounded-lg bg-white/70 dark:bg-slate-900/50 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
-            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-400" />
+          <p className="mt-3 flex items-start gap-2 rounded-control bg-surface/70 px-3 py-2 text-xs text-fg-secondary">
+            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" aria-hidden="true" />
             <span>{EXAM_ANSWERS_NOT_ANALYZED} — иначе их названия и сроки попали бы студентам в задачи. Документ виден только преподавателю курса.</span>
           </p>
         )}
 
         {running && (
-          <p className="mt-3 rounded-lg bg-white/70 dark:bg-slate-900/50 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
+          <p className="mt-3 rounded-control bg-surface/70 px-3 py-2 text-xs text-fg-secondary">
             ИИ читает документ — обычно это занимает от нескольких секунд до минуты. Результат появится здесь автоматически.
           </p>
         )}
@@ -143,19 +144,19 @@ export default function AnalysisPanel({ doc }) {
         {analyzed && (
           <div className="mt-4 space-y-4">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Краткая суть</p>
-              <p className="mt-1 text-sm leading-6 text-slate-800 dark:text-slate-100">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-fg-muted">Краткая суть</p>
+              <p className="mt-1 text-sm leading-6 text-fg">
                 {analysis.summary ?? 'ИИ не сформулировал краткую суть для этого документа.'}
               </p>
             </div>
             {analysis.topics.length > 0 && (
               <div>
-                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
                   <Tags className="h-3 w-3" /> Ключевые темы
                 </p>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {analysis.topics.map((topic) => (
-                    <span key={topic} className="rounded-full bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-medium text-violet-700 dark:text-violet-300 ring-1 ring-inset ring-violet-200 dark:ring-violet-500/30">
+                    <span key={topic} className="rounded-full bg-surface px-2.5 py-1 text-xs font-medium text-primary-fg ring-1 ring-inset ring-ring">
                       {topic}
                     </span>
                   ))}
@@ -167,13 +168,13 @@ export default function AnalysisPanel({ doc }) {
       </section>
 
       <section>
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-          <ListChecks className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-fg">
+          <ListChecks className="h-4 w-4 text-primary-fg" />
           Задания курса из документа
-          <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300">{tasks.totalElements}</span>
+          <span className="rounded-full bg-page-alt px-2 py-0.5 text-xs font-semibold text-fg-secondary">{tasks.totalElements}</span>
         </h3>
         {tasks.content.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-3 rounded-xl border border-dashed border-line-strong px-4 py-6 text-center text-sm text-fg-muted">
             {analyzed ? 'ИИ не нашёл в документе заданий и дедлайнов.' : 'Задания появятся после анализа документа.'}
           </p>
         ) : (
@@ -182,7 +183,7 @@ export default function AnalysisPanel({ doc }) {
           </ul>
         )}
         {tasks.content.length > 0 && (
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-2 text-xs text-fg-muted">
             Каждый студент курса получает эти задания в «Мои задачи» и отмечает их выполнение сам.
           </p>
         )}
@@ -207,7 +208,7 @@ function statusHint(analysis, examAnswers) {
 
 function PanelMessage({ icon: Icon, text }) {
   return (
-    <p className="flex items-center gap-2 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+    <p className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-fg">
       <Icon className="h-4 w-4 shrink-0" /> {text}
     </p>
   )

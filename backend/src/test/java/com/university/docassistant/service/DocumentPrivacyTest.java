@@ -76,7 +76,7 @@ class DocumentPrivacyTest {
 
         @Test
         void teachersEmailPublicDomainsAndSyllabusDataStay() {
-            Result result = privacy.mask(RAW, TEACHER_EMAIL);
+            Result result = privacy.mask(RAW, TEACHER_EMAIL, null);
 
             assertNoPersonalData(result.text());
             assertThat(result.text()).contains(TEACHER_EMAIL, "dean@sdu.edu.kz", "20.10.2026 23:59", "CS101",
@@ -88,8 +88,8 @@ class DocumentPrivacyTest {
         @Test
         void disabledPrivacyKeepsTheTextAsItIs() {
             DocumentPrivacyService off = new DocumentPrivacyService(new PrivacyProperties(false, List.of()));
-            assertThat(off.mask(RAW, null).text()).isEqualTo(RAW);
-            assertThat(off.mask(RAW, null).count()).isZero();
+            assertThat(off.mask(RAW, null, null).text()).isEqualTo(RAW);
+            assertThat(off.mask(RAW, null, null).count()).isZero();
             assertThat(off.maskFileName("Иванов_" + IIN + ".pdf")).isEqualTo("Иванов_" + IIN + ".pdf");
         }
 
@@ -170,7 +170,7 @@ class DocumentPrivacyTest {
         private static final long ID = 100L;
         private final DocumentRepository documents = mock(DocumentRepository.class);
         private final AiClientService ai = mock(AiClientService.class);
-        private final String masked = privacy.mask(RAW, TEACHER_EMAIL).text();
+        private final String masked = privacy.mask(RAW, TEACHER_EMAIL, null).text();
 
         @BeforeEach
         void setUp() {
@@ -256,7 +256,7 @@ class DocumentPrivacyTest {
                 for (Row row : table.values()) {
                     if (row.id > afterId && row.text != null && !fingerprint.equals(row.scan)
                             && batch.size() < page.getPageSize()) {
-                        batch.add(new PrivacySource(row.id, row.text, row.teacherEmail, row.scan));
+                        batch.add(new PrivacySource(row.id, row.text, row.teacherEmail, null, row.scan));
                     }
                 }
                 return batch;

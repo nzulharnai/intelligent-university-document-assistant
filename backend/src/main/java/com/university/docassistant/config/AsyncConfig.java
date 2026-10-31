@@ -17,6 +17,32 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 public class AsyncConfig {
 
     public static final String AI_EXECUTOR = "aiTaskExecutor";
+    /** One thread for re-masking a course's documents (CoursePrivacyRemask): CPU only, never the AI's pool. */
+    public static final String PRIVACY_EXECUTOR = "privacyTaskExecutor";
+    /** Notification e-mails (NotificationService): sent after commit here, never on a request thread. */
+    public static final String MAIL_EXECUTOR = "mailTaskExecutor";
+
+    @Bean(name = MAIL_EXECUTOR)
+    public ThreadPoolTaskExecutor mailTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("mail-");
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(1_000);
+        executor.setAllowCoreThreadTimeOut(true);
+        return executor;
+    }
+
+    @Bean(name = PRIVACY_EXECUTOR)
+    public ThreadPoolTaskExecutor privacyTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("privacy-");
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(100);
+        executor.setAllowCoreThreadTimeOut(true);
+        return executor;
+    }
 
     @Bean(name = AI_EXECUTOR)
     public ThreadPoolTaskExecutor aiTaskExecutor(AiProperties properties) {

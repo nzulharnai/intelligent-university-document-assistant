@@ -42,6 +42,13 @@ public class User {
     @Column(name = "full_name")
     private String fullName;
 
+    /**
+     * Optional contact phone, digits only ("77011234567"; see PhoneNumbers). A course teacher's phone stays readable
+     * in the course's documents, like their e-mail (US-09).
+     */
+    @Column(length = 20)
+    private String phone;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Role role;
@@ -62,6 +69,12 @@ public class User {
     @Column(name = "teacher_requested", nullable = false)
     @ColumnDefault("false")
     private boolean teacherRequested;
+
+    /** Notifications are also e-mailed (US-13); the site's bell shows them either way. Set in the profile. */
+    @Column(name = "email_notifications", nullable = false)
+    @ColumnDefault("true")
+    @Builder.Default
+    private boolean emailNotifications = true;
 
     @Embedded
     @AttributeOverride(name = "code", column = @Column(name = "reset_otp"))

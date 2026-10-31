@@ -94,7 +94,8 @@ public class DocumentOcrService {
             if (recognized == null || recognized.text() == null || recognized.text().isBlank()) {
                 return fail(documentId, "no text recognized");
             }
-            PreparedText prepared = privacyService.prepare(recognized.text(), source.teacherEmail());
+            PreparedText prepared = privacyService.prepare(recognized.text(), source.teacherEmail(),
+                    source.teacherPhone());
             transaction.executeWithoutResult(status -> {
                 documentRepository.updateRecognizedText(documentId, recognized.text(), recognized.truncated(),
                         prepared.masked().text(), prepared.snippet(), prepared.masked().count(),

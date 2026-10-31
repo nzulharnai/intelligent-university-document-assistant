@@ -8,6 +8,7 @@ import com.university.docassistant.dto.PageResponse;
 import com.university.docassistant.dto.AdminDtos.UpdateRoleRequest;
 import com.university.docassistant.entity.Role;
 import com.university.docassistant.service.AdminService;
+import com.university.docassistant.service.DeadlineReminderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -35,6 +36,17 @@ import java.util.List;
 public class AdminController {
 
     private final AdminService adminService;
+    private final DeadlineReminderService deadlineReminderService;
+
+    /** How many deadline reminders a manual run sent. */
+    public record RemindersRunResponse(int sent) {
+    }
+
+    /** Runs the deadline reminders now instead of waiting for the schedule (demo, or after an outage); audited. */
+    @PostMapping("/notifications/run-reminders")
+    public RemindersRunResponse runReminders(@AuthenticationPrincipal UserDetails principal) {
+        return new RemindersRunResponse(deadlineReminderService.runNow(principal.getUsername()));
+    }
 
     /** Users by id, paged; {@code q} searches email or name (2+ characters), {@code role} filters by role. */
     @GetMapping("/users")

@@ -9,10 +9,22 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
+
+    /** Who of these users gets notifications by e-mail too: those who kept the preference on (US-13). */
+    record MailRecipient(Long id, String email, String fullName) {
+    }
+
+    @Query("""
+            SELECT new com.university.docassistant.repository.UserRepository$MailRecipient(u.id, u.email, u.fullName)
+            FROM User u WHERE u.id IN :ids AND u.emailNotifications = true
+            """)
+    List<MailRecipient> findMailRecipients(@Param("ids") Collection<Long> ids);
 
     Optional<User> findByEmail(String email);
 

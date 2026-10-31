@@ -76,6 +76,7 @@ public class DocumentQnaService {
     public DocumentAnswerResponse askDocument(Long documentId, String question, String userEmail) {
         // Checked first: the chunks below are read only for a document the user may view.
         Document document = documentService.getViewable(documentId, userEmail);
+        boolean realNames = access.can(access.currentUser(userEmail), document, Permission.MANAGE_COURSE);
         requireAi();
         if (document.getTextSnippet() == null) {
             return new DocumentAnswerResponse(NO_TEXT_ANSWER, false, List.of());
@@ -91,7 +92,7 @@ public class DocumentQnaService {
         if (context.isEmpty()) {
             return new DocumentAnswerResponse(NO_TEXT_ANSWER, false, List.of());
         }
-        return answer(question, context);
+        return answer(question, context, realNames);
     }
 
     /** Answers from the course's documents; 403 unless the user is enrolled in it, teaches it or is ADMIN. */
@@ -99,7 +100,9 @@ public class DocumentQnaService {
         User user = access.currentUser(userEmail);
         access.authorizeCourse(user, courseId, Permission.ASK_AI);
         requireAi();
-        return answerFromCourses(question, List.of(courseId), access.scope(user).includeTeacherOnly());
+        // includeTeacherOnly: the user teaches the course or is ADMIN - also who sees the real file names.
+        boolean manages = access.scope(user).includeTeacherOnly();
+        return answerFromCourses(question, List.of(courseId), manages, manages);
     }
 
     /** Answers from the documents of all the user's courses (enrolled, taught, or all of them for ADMIN). */
@@ -110,11 +113,11 @@ public class DocumentQnaService {
         if (scope.courseIds().isEmpty()) {
             return new DocumentAnswerResponse(NO_ANSWER, false, List.of());
         }
-        return answerFromCourses(question, scope.courseIds(), scope.includeTeacherOnly());
+        return answerFromCourses(question, scope.courseIds(), scope.includeTeacherOnly(), scope.includeTeacherOnly());
     }
 
     private DocumentAnswerResponse answerFromCourses(String question, List<Long> allowedCourseIds,
-                                                     boolean includeTeacherOnly) {
+                                                     boolean includeTeacherOnly, boolean realNames) {
         List<ChunkHit> context = toTsQuery(question)
                 .map(query -> chunkRepository.searchInCourses(allowedCourseIds, includeTeacherOnly, query,
                         COURSE_CONTEXT_CHUNKS))
@@ -123,12 +126,17 @@ public class DocumentQnaService {
             // Unlike a single document, there is no sensible "beginning" of a course to fall back to.
             return new DocumentAnswerResponse(NO_ANSWER, false, List.of());
         }
-        return answer(question, context);
+        return answer(question, context, realNames);
     }
 
-    private DocumentAnswerResponse answer(String question, List<ChunkHit> context) {
-        // Chunks are cut from the masked text (US-09); the file names going along are masked here.
-        String reply = callAi(systemPrompt(context, privacyService::maskFileName), userPrompt(question));
+    /**
+     * Chunks are cut from the masked text (US-09); the file names going along and the question itself are masked
+     * here, so no personal data reaches the AI. {@code realNames}: the sources show the real file names (the course
+     * teacher, ADMIN), otherwise masked ones.
+     */
+    private DocumentAnswerResponse answer(String question, List<ChunkHit> context, boolean realNames) {
+        String reply = callAi(systemPrompt(context, privacyService::maskFileName),
+                userPrompt(privacyService.maskQuestion(question)));
 
         Set<Integer> cited = citedFragments(reply, context.size());
         if (cited.isEmpty() && isNoAnswer(reply)) {
@@ -139,7 +147,8 @@ public class DocumentQnaService {
             // A model that cites nothing still answered from this context, so all of it is the source then.
             if (cited.isEmpty() || cited.contains(i + 1)) {
                 ChunkHit hit = context.get(i);
-                sources.add(new SourceSnippetDto(i + 1, hit.getDocumentId(), hit.getDocumentName(),
+                String name = realNames ? hit.getDocumentName() : privacyService.maskFileName(hit.getDocumentName());
+                sources.add(new SourceSnippetDto(i + 1, hit.getDocumentId(), name,
                         hit.getChunkIndex(), hit.getStartOffset(), hit.getEndOffset(), hit.getContent()));
             }
         }

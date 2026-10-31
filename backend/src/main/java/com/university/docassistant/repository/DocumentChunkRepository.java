@@ -63,8 +63,9 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Lo
 
     /**
      * Best chunks among the documents of {@code courseIds}, which the caller takes from AccessControlService.scope
-     * (pre-retrieval authorization): chunks of any other course never reach the prompt. TEACHER_ONLY documents
-     * and documents the AI is still classifying (PENDING/PROCESSING) are searched only with {@code includeTeacherOnly}. {@code courseIds} must not be empty.
+     * (pre-retrieval authorization): chunks of any other course never reach the prompt. Documents a student may not
+     * see (DocumentRepository.VISIBLE_TO_STUDENTS_SQL: TEACHER_ONLY, AI or OCR still working or failed) are searched
+     * only with {@code includeTeacherOnly}. {@code courseIds} must not be empty.
      */
     @Query(value = """
             SELECT ch.document_id AS documentId, d.original_file_name AS documentName, ch.chunk_index AS chunkIndex,
@@ -74,8 +75,8 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Lo
                 JOIN documents d ON d.id = ch.document_id
                 CROSS JOIN to_tsquery('russian', :query) q
             WHERE d.course_id IN (:courseIds)
-              AND (:includeTeacherOnly
-                   OR (d.visibility <> 'TEACHER_ONLY' AND d.ai_status NOT IN ('PENDING', 'PROCESSING')))
+              AND (:includeTeacherOnly OR """ + DocumentRepository.VISIBLE_TO_STUDENTS_SQL + """
+              )
               AND ch.text_tsv @@ q
             ORDER BY score DESC, d.id, ch.chunk_index
             LIMIT :limit

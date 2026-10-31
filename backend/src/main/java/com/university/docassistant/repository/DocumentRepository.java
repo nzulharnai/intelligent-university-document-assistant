@@ -29,36 +29,62 @@ import java.util.Optional;
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, Long> {
 
-    /** For ADMIN: every document; {@code courseId} null means all of them. */
-    @Query(value = DocumentSummary.SELECT + "WHERE (:courseId IS NULL OR c.id = :courseId)",
-            countQuery = "SELECT COUNT(d) FROM Document d WHERE (:courseId IS NULL OR d.course.id = :courseId)")
-    Page<DocumentSummary> findAllSummaries(@Param("courseId") Long courseId, Pageable pageable);
+    /**
+     * What a student may see of a document of their course, in JPQL: AccessControlService.isHiddenFromStudents
+     * negated - not TEACHER_ONLY, and classified by hand (MANUAL) or by the AI (DONE) without a failed OCR.
+     */
+    String VISIBLE_TO_STUDENTS = """
+            (d.visibility <> com.university.docassistant.entity.DocumentVisibility.TEACHER_ONLY
+             AND (d.aiStatus = com.university.docassistant.entity.AiStatus.MANUAL
+                  OR (d.aiStatus = com.university.docassistant.entity.AiStatus.DONE
+                      AND (d.ocrStatus IS NULL
+                           OR d.ocrStatus <> com.university.docassistant.entity.OcrStatus.FAILED))))
+            """;
+
+    /** The same rule in SQL, for the native queries here and in DocumentChunkRepository. */
+    String VISIBLE_TO_STUDENTS_SQL = """
+            (d.visibility <> 'TEACHER_ONLY'
+             AND (d.ai_status = 'MANUAL'
+                  OR (d.ai_status = 'DONE' AND (d.ocr_status IS NULL OR d.ocr_status <> 'FAILED'))))
+            """;
 
     /**
-     * Documents of the allowed courses (AccessControlService.Scope); TEACHER_ONLY ones, and ones the AI is still
-     * classifying (PENDING/PROCESSING), only with {@code includeTeacherOnly}. {@code courseId} null means all allowed
-     * courses.
+     * "Требуют проверки" on the course page: documents hidden from students because the AI or the OCR failed, until
+     * the teacher sets their type by hand. Applied only with {@code needsReview}.
+     */
+    String NEEDS_REVIEW = """
+            (:needsReview = FALSE
+             OR d.aiStatus = com.university.docassistant.entity.AiStatus.FAILED
+             OR (d.ocrStatus = com.university.docassistant.entity.OcrStatus.FAILED
+                 AND d.aiStatus <> com.university.docassistant.entity.AiStatus.MANUAL))
+            """;
+
+    /** For ADMIN: every document; {@code courseId} null means all of them. */
+    @Query(value = DocumentSummary.SELECT + "WHERE (:courseId IS NULL OR c.id = :courseId) AND " + NEEDS_REVIEW,
+            countQuery = "SELECT COUNT(d) FROM Document d WHERE (:courseId IS NULL OR d.course.id = :courseId) AND "
+                    + NEEDS_REVIEW)
+    Page<DocumentSummary> findAllSummaries(@Param("courseId") Long courseId,
+                                           @Param("needsReview") boolean needsReview,
+                                           Pageable pageable);
+
+    /**
+     * Documents of the allowed courses (AccessControlService.Scope); TEACHER_ONLY ones, and ones hidden from students
+     * (AI or OCR still working or failed), only with {@code includeTeacherOnly}. {@code courseId} null means all
+     * allowed courses; {@code needsReview} keeps only the documents of {@link #NEEDS_REVIEW}.
      */
     @Query(value = DocumentSummary.SELECT + """
             WHERE c.id IN :courseIds
               AND (:courseId IS NULL OR c.id = :courseId)
-              AND (:includeTeacherOnly = TRUE
-                   OR (d.visibility <> com.university.docassistant.entity.DocumentVisibility.TEACHER_ONLY
-                       AND d.aiStatus NOT IN (com.university.docassistant.entity.AiStatus.PENDING,
-                                              com.university.docassistant.entity.AiStatus.PROCESSING)))
-            """,
+              AND (:includeTeacherOnly = TRUE OR """ + VISIBLE_TO_STUDENTS + ") AND " + NEEDS_REVIEW,
             countQuery = """
             SELECT COUNT(d) FROM Document d
             WHERE d.course.id IN :courseIds
               AND (:courseId IS NULL OR d.course.id = :courseId)
-              AND (:includeTeacherOnly = TRUE
-                   OR (d.visibility <> com.university.docassistant.entity.DocumentVisibility.TEACHER_ONLY
-                       AND d.aiStatus NOT IN (com.university.docassistant.entity.AiStatus.PENDING,
-                                              com.university.docassistant.entity.AiStatus.PROCESSING)))
-            """)
+              AND (:includeTeacherOnly = TRUE OR """ + VISIBLE_TO_STUDENTS + ") AND " + NEEDS_REVIEW)
     Page<DocumentSummary> findSummariesInCourses(@Param("courseIds") Collection<Long> courseIds,
                                                  @Param("includeTeacherOnly") boolean includeTeacherOnly,
                                                  @Param("courseId") Long courseId,
+                                                 @Param("needsReview") boolean needsReview,
                                                  Pageable pageable);
 
     @Query(DocumentSummary.SELECT + "WHERE d.id IN :ids")
@@ -67,27 +93,23 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     /**
      * Ids of documents whose masked text (US-09: text_tsv is built from masked_text) matches {@code query} (web-search syntax: words are ANDed,
      * "quoted phrase", OR, -excluded), best match first. {@code all} (ADMIN) lifts the course filter, which is
-     * the same as in {@link #findSummariesInCourses}. Uses the GIN index from DocumentSearchSchema.
+     * the same as in {@link #findSummariesInCourses} ({@link #VISIBLE_TO_STUDENTS_SQL}). Uses the GIN index from DocumentSearchSchema.
      * The page must be unsorted: the order is fixed by relevance.
      */
     @Query(value = """
             SELECT d.id FROM documents d
             WHERE d.text_tsv @@ websearch_to_tsquery('russian', :query)
-              AND (:all
-                   OR (d.course_id IN (:courseIds)
-                       AND (:includeTeacherOnly
-                            OR (d.visibility <> 'TEACHER_ONLY'
-                                AND d.ai_status NOT IN ('PENDING', 'PROCESSING')))))
+              AND (:all OR (d.course_id IN (:courseIds) AND (:includeTeacherOnly OR """ + VISIBLE_TO_STUDENTS_SQL
+                    + """
+              )))
             ORDER BY ts_rank(d.text_tsv, websearch_to_tsquery('russian', :query)) DESC, d.uploaded_at DESC, d.id DESC
             """,
             countQuery = """
             SELECT COUNT(*) FROM documents d
             WHERE d.text_tsv @@ websearch_to_tsquery('russian', :query)
-              AND (:all
-                   OR (d.course_id IN (:courseIds)
-                       AND (:includeTeacherOnly
-                            OR (d.visibility <> 'TEACHER_ONLY'
-                                AND d.ai_status NOT IN ('PENDING', 'PROCESSING')))))
+              AND (:all OR (d.course_id IN (:courseIds) AND (:includeTeacherOnly OR """ + VISIBLE_TO_STUDENTS_SQL
+                    + """
+              )))
             """,
             nativeQuery = true)
     Page<Long> searchVisibleIds(@Param("query") String query,
@@ -99,13 +121,14 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     @EntityGraph(attributePaths = {"owner", "course"})
     Optional<Document> findWithOwnerById(Long id);
 
-    /** What OCR needs: the stored file and the course teacher's e-mail (kept readable by the masking). */
-    record OcrSource(Long id, String storedFileName, String originalFileName, String contentType, String teacherEmail) {
+    /** What OCR needs: the stored file and the course teacher's e-mail and phone (kept readable by the masking). */
+    record OcrSource(Long id, String storedFileName, String originalFileName, String contentType, String teacherEmail,
+                     String teacherPhone) {
     }
 
     @Query("""
             SELECT new com.university.docassistant.repository.DocumentRepository$OcrSource(
-                d.id, d.storedFileName, d.originalFileName, d.contentType, t.email)
+                d.id, d.storedFileName, d.originalFileName, d.contentType, t.email, t.phone)
             FROM Document d LEFT JOIN d.course c LEFT JOIN c.teacher t WHERE d.id = :id
             """)
     Optional<OcrSource> findOcrSource(@Param("id") Long id);
@@ -129,7 +152,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                              @Param("fingerprint") String fingerprint);
 
     /** A document whose text must be masked (again), with its course teacher's e-mail (kept readable). */
-    record PrivacySource(Long id, String extractedText, String teacherEmail, String piiScan) {
+    record PrivacySource(Long id, String extractedText, String teacherEmail, String teacherPhone, String piiScan) {
     }
 
     /**
@@ -138,7 +161,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
      */
     @Query("""
             SELECT new com.university.docassistant.repository.DocumentRepository$PrivacySource(
-                d.id, d.extractedText, t.email, d.piiScan)
+                d.id, d.extractedText, t.email, t.phone, d.piiScan)
             FROM Document d LEFT JOIN d.course c LEFT JOIN c.teacher t
             WHERE d.id > :afterId AND d.extractedText IS NOT NULL
               AND (d.piiScan IS NULL OR d.piiScan <> :fingerprint)
@@ -146,6 +169,27 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
             """)
     List<PrivacySource> findPrivacyBatch(@Param("fingerprint") String fingerprint, @Param("afterId") Long afterId,
                                          Pageable pageable);
+
+    /** Like {@link #findPrivacyBatch}, only in the given courses (CoursePrivacyRemask). */
+    @Query("""
+            SELECT new com.university.docassistant.repository.DocumentRepository$PrivacySource(
+                d.id, d.extractedText, t.email, t.phone, d.piiScan)
+            FROM Document d JOIN d.course c LEFT JOIN c.teacher t
+            WHERE c.id IN :courseIds AND d.id > :afterId AND d.extractedText IS NOT NULL
+              AND (d.piiScan IS NULL OR d.piiScan <> :fingerprint)
+            ORDER BY d.id
+            """)
+    List<PrivacySource> findPrivacyBatchInCourses(@Param("fingerprint") String fingerprint,
+                                                  @Param("courseIds") Collection<Long> courseIds,
+                                                  @Param("afterId") Long afterId, Pageable pageable);
+
+    /**
+     * Marks the masked copies of these courses' documents as outdated (the teacher's contacts changed): the scoped
+     * re-mask then picks them up, and so does the startup backfill if the server stops before it is done.
+     */
+    @Modifying
+    @Query("UPDATE Document d SET d.piiScan = NULL WHERE d.course.id IN :courseIds AND d.extractedText IS NOT NULL")
+    int markPrivacyOutdatedInCourses(@Param("courseIds") Collection<Long> courseIds);
 
     @Modifying
     @Query("""
@@ -173,12 +217,14 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     @Modifying
     @Query("""
-            UPDATE Document d SET d.aiSummary = :summary, d.aiTopics = :topics, d.aiAnalyzedAt = :analyzedAt
+            UPDATE Document d SET d.aiSummary = :summary, d.aiTopics = :topics, d.aiAnalyzedAt = :analyzedAt,
+                d.aiExtractionPartial = :partial
             WHERE d.id = :id
             """)
     int updateAnalysis(@Param("id") Long id,
                        @Param("summary") String summary,
                        @Param("topics") String topics,
+                       @Param("partial") boolean partial,
                        @Param("analyzedAt") LocalDateTime analyzedAt);
 
     /** What a status poll needs from a document, with what deciding access to it needs. */

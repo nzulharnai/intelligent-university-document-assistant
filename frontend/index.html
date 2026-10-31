@@ -6,11 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>UniDocs Assistant</title>
     <script>
-      // Apply the theme before the first paint to avoid a light flash; keep in sync with ThemeContext.
+      // Apply a saved dark theme before the first paint to avoid a light flash; light is the default.
+      // Keep in sync with ThemeContext.
       try {
-        var saved = localStorage.getItem('theme')
-        var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
-        document.documentElement.classList.toggle('dark', dark)
+        document.documentElement.classList.toggle('dark', localStorage.getItem('theme') === 'dark')
       } catch (e) {}
     </script>
   </head>

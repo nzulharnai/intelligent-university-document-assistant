@@ -70,30 +70,30 @@ export default function CourseStudents({ courseId, onChange }) {
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-      <h2 className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-5 py-3.5 text-sm font-semibold text-slate-900 dark:text-white">
-        <Users className="h-4 w-4 text-indigo-600" /> Студенты курса
-        {page && <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300">{page.totalElements}</span>}
+    <section className="rounded-card border border-line bg-surface shadow-card">
+      <h2 className="flex items-center gap-2 border-b border-line-subtle px-5 py-4 text-base font-semibold text-fg sm:px-6">
+        <Users className="h-4 w-4 text-primary-fg" /> Студенты курса
+        {page && <span className="rounded-full bg-page-alt px-2 py-0.5 text-xs font-semibold text-fg-secondary">{page.totalElements}</span>}
       </h2>
       {error ? (
         <ErrorState title="Не удалось загрузить список студентов" message={error} onRetry={retry} />
       ) : !page ? (
-        <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Загрузка…</div>
+        <div className="flex items-center justify-center gap-2 py-6 text-sm text-fg-muted"><Loader2 className="h-4 w-4 animate-spin" /> Загрузка…</div>
       ) : page.content.length === 0 ? (
-        <p className="px-5 py-6 text-center text-sm text-slate-500 dark:text-slate-400">Пока никто не записан. Отправьте студентам ссылку на курс.</p>
+        <p className="px-5 py-6 text-center text-sm text-fg-muted">Пока никто не записан. Отправьте студентам ссылку на курс.</p>
       ) : (
-        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+        <ul className="divide-y divide-line-subtle">
           {page.content.map((student) => (
             <li key={student.id} className="flex items-center gap-3 px-5 py-2.5">
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-slate-900 dark:text-white">{student.fullName || '—'}</span>
-                <span className="block truncate text-xs text-slate-500 dark:text-slate-400">{student.email}</span>
+                <span className="block truncate text-sm font-medium text-fg">{student.fullName || '—'}</span>
+                <span className="block truncate text-xs text-fg-muted">{student.email}</span>
               </span>
               <button
                 type="button"
                 onClick={() => remove(student)}
                 disabled={busyId === student.id}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 transition hover:border-red-200 hover:text-red-600 disabled:opacity-60"
+                className="inline-flex items-center gap-1 rounded-control border border-line px-2 py-1 text-xs font-medium text-fg-secondary transition hover:border-danger/30 hover:text-danger-fg disabled:opacity-60"
                 title="Отчислить с курса"
                 aria-label={`Отчислить с курса: ${student.fullName || student.email}`}
               >
@@ -108,7 +108,7 @@ export default function CourseStudents({ courseId, onChange }) {
           type="button"
           onClick={loadMore}
           disabled={loadingMore}
-          className="flex w-full items-center justify-center gap-2 border-t border-slate-100 dark:border-slate-800 py-2.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-2 border-t border-line-subtle py-2.5 text-sm font-medium text-primary-fg hover:bg-page-alt disabled:opacity-60"
         >
           {loadingMore && <Loader2 className="h-4 w-4 animate-spin" />} Показать ещё
         </button>

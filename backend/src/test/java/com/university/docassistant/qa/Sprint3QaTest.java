@@ -697,7 +697,7 @@ class Sprint3QaTest {
         when(documents.findOcrSource(anyLong())).thenAnswer(invocation -> {
             Document document = documentTable.get(invocation.<Long>getArgument(0));
             return Optional.of(new OcrSource(document.getId(), document.getStoredFileName(),
-                    document.getOriginalFileName(), document.getContentType(), TEACHER_EMAIL));
+                    document.getOriginalFileName(), document.getContentType(), TEACHER_EMAIL, null));
         });
         when(documents.updateRecognizedText(anyLong(), any(), anyBoolean(), any(), any(), anyInt(), any(), any()))
                 .thenAnswer(invocation -> {
@@ -777,7 +777,7 @@ class Sprint3QaTest {
             Assignment assignment = assignmentTable.get(invocation.<Long>getArgument(0));
             return Optional.of(new AssignmentResponse(assignment.getId(), assignment.getTitle(),
                     assignment.getRequirements(), assignment.getDeadline(), assignment.getStatus(), COURSE_ID,
-                    inf345.getTitle(), inf345.getCode(), null, null, null, null, null, null));
+                    inf345.getTitle(), inf345.getCode(), null, null, null, null, null, null, false, true, null));
         });
 
         // fanOut: one task per enrolled student for each ACTIVE assignment of the course that lacks one.

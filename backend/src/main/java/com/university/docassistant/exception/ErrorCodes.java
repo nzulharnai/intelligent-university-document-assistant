@@ -28,6 +28,8 @@ public final class ErrorCodes {
     /** The user behind the token no longer exists. */
     public static final String ACCOUNT_NOT_FOUND = "ACCOUNT_NOT_FOUND";
     public static final String ACCOUNT_DISABLED = "ACCOUNT_DISABLED";
+    /** PATCH /users/me with a phone that is not 10-15 digits (spaces, dashes, brackets and a leading + allowed). */
+    public static final String PHONE_INVALID = "PHONE_INVALID";
     public static final String AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED";
     /** No token, or an invalid or outdated one (e.g. the role changed); the client should log in again. */
     public static final String AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED";
@@ -85,6 +87,20 @@ public final class ErrorCodes {
     // --- Tasks and submissions --------------------------------------------------------------------------------------
     public static final String TASK_NOT_OWN = "TASK_NOT_OWN";
     public static final String TASK_NOT_SUBMITTABLE = "TASK_NOT_SUBMITTABLE";
+    /** A student tried to set SUBMITTED, GRADED or (on an assignment task) COMPLETED, or to leave SUBMITTED/GRADED. */
+    public static final String TASK_STATUS_SYSTEM_ONLY = "TASK_STATUS_SYSTEM_ONLY";
+    /** A hand-in after the deadline of an assignment that does not accept late work; the message names the deadline. */
+    public static final String SUBMISSION_DEADLINE_PASSED = "SUBMISSION_DEADLINE_PASSED";
+    /** A hand-in for a task the teacher has already graded. */
+    public static final String SUBMISSION_ALREADY_GRADED = "SUBMISSION_ALREADY_GRADED";
+    /** Only tasks of a course assignment are graded (not legacy tasks). */
+    public static final String TASK_NOT_GRADABLE = "TASK_NOT_GRADABLE";
+    /** Score outside 0..max_score (0..1000 without one) or with more than one decimal; the message names the range. */
+    public static final String GRADE_SCORE_INVALID = "GRADE_SCORE_INVALID";
+
+    // --- Notifications ----------------------------------------------------------------------------------------------
+    /** Not one of the user's own notifications (also for others' ids, which reveal nothing). */
+    public static final String NOTIFICATION_NOT_FOUND = "NOTIFICATION_NOT_FOUND";
 
     // --- Uploads ----------------------------------------------------------------------------------------------------
     public static final String UPLOAD_FORBIDDEN = "UPLOAD_FORBIDDEN";

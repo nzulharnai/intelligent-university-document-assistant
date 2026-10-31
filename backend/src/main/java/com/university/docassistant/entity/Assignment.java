@@ -13,6 +13,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import lombok.AllArgsConstructor;
@@ -83,6 +84,16 @@ public class Assignment {
     @JoinColumn(name = "duplicate_of_id")
     @OnDelete(action = OnDeleteAction.SET_NULL)
     private Assignment duplicateOf;
+
+    /** Submissions after the deadline are accepted (and marked late); false refuses them. */
+    @Column(name = "allow_late", nullable = false)
+    @ColumnDefault("true")
+    @Builder.Default
+    private boolean allowLate = true;
+
+    /** The highest grade, 1..1000; null when the assignment is not graded with points. */
+    @Column(name = "max_score")
+    private Integer maxScore;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

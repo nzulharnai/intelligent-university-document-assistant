@@ -60,7 +60,8 @@ import static org.mockito.Mockito.when;
 class DocumentPrivacyAccessTest {
 
     private static final String IIN = "990101300013";
-    private static final String ORIGINAL = "Список группы: Иванов А., ИИН 990101300013, тел. 87011234567.";
+    private static final String ORIGINAL = "Список группы ИНФ-345 на весенний семестр: Иванов А., ИИН 990101300013, "
+            + "тел. 87011234567. Староста группы отвечает за посещаемость.";
 
     private final UserRepository users = mock(UserRepository.class);
     private final CourseRepository courses = mock(CourseRepository.class);
@@ -94,8 +95,9 @@ class DocumentPrivacyAccessTest {
                 .contentType("application/pdf").fileSize(10L).category(DocumentCategory.OTHER)
                 .visibility(DocumentVisibility.COURSE_STUDENTS).aiStatus(AiStatus.DONE).course(course).owner(teacher)
                 .uploadedAt(LocalDateTime.now())
-                .extractedText(ORIGINAL).maskedText(privacy.mask(ORIGINAL, null).text())
+                .extractedText(ORIGINAL).maskedText(privacy.mask(ORIGINAL, null, null).text())
                 .piiCount(2).piiTypes("IIN,PHONE").build();
+        document.setTextSnippet(DocumentParserService.snippet(document.getMaskedText()));
         when(documents.findWithOwnerById(50L)).thenReturn(Optional.of(document));
         when(storage.load("stored")).thenReturn(new ByteArrayResource(new byte[]{1}));
     }
@@ -265,6 +267,82 @@ class DocumentPrivacyAccessTest {
             verify(ai).chat(systemPrompt.capture(), anyString());
             assertThat(systemPrompt.getValue()).doesNotContain(IIN).doesNotContain("87011234567")
                     .contains("[ИИН скрыт]", "Никогда не пытайся восстановить");
+        }
+    }
+
+    /** Review fix: file names with personal data, and the Q&A question itself. */
+    @Nested
+    class FileNamesAndQuestions {
+
+        private static final String NAME = "Иванов_ИИН_" + IIN + "_тел_87011234567.pdf";
+
+        @BeforeEach
+        void personalFileName() {
+            document.setOriginalFileName(NAME);
+            document.setOriginalAllowedForStudents(true);
+        }
+
+        @Test
+        void studentSeesTheNameMaskedOnTheDocumentPageTextTabAndDownload() {
+            assertThat(service.get(50L, "student@uni.kz").originalFileName())
+                    .isEqualTo("Иванов_ИИН_[ИИН скрыт]_тел_[телефон скрыт].pdf");
+            assertThat(service.text(50L, "student@uni.kz").originalFileName()).doesNotContain(IIN);
+            assertThat(service.download(50L, "student@uni.kz").fileName()).doesNotContain(IIN).doesNotContain("87011234567");
+            assertThat(service.view(50L, "student@uni.kz").fileName()).doesNotContain(IIN);
+        }
+
+        @Test
+        void teacherAndAdminSeeTheRealName() {
+            for (String email : List.of("teacher@uni.kz", "dean@uni.kz")) {
+                assertThat(service.get(50L, email).originalFileName()).isEqualTo(NAME);
+                assertThat(service.text(50L, email).originalFileName()).isEqualTo(NAME);
+                assertThat(service.download(50L, email).fileName()).isEqualTo(NAME);
+            }
+        }
+
+        @Test
+        void questionIsMaskedBeforeTheAiAndSourcesShowTheNameByRole() {
+            DocumentChunkRepository chunks = mock(DocumentChunkRepository.class);
+            AiClientService ai = mock(AiClientService.class);
+            DocumentService viewable = mock(DocumentService.class);
+            DocumentQnaService qna = new DocumentQnaService(viewable, chunks, access, ai,
+                    new AiProperties(true, "k", "m", "http://x", Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 1, 1, 2, 1),
+                    privacy);
+            when(viewable.getViewable(eq(50L), anyString())).thenReturn(document);
+            when(ai.isConfigured()).thenReturn(true);
+            when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Ответ [" + NAME + ", фрагмент 1]"));
+            ChunkHit hit = new ChunkHit() {
+                public Long getDocumentId() { return 50L; }
+                public String getDocumentName() { return NAME; }
+                public Integer getChunkIndex() { return 0; }
+                public Integer getStartOffset() { return 0; }
+                public Integer getEndOffset() { return 60; }
+                public String getContent() { return document.getMaskedText(); }
+                public Double getScore() { return 1.0; }
+            };
+            when(chunks.searchInDocument(eq(50L), anyString(), anyInt())).thenReturn(List.of(hit));
+
+            var forStudent = qna.askDocument(50L, "Мой ИИН " + IIN + ", телефон +7 701 123 45 67 — где расписание?",
+                    "student@uni.kz");
+            var forTeacher = qna.askDocument(50L, "Где расписание?", "teacher@uni.kz");
+
+            ArgumentCaptor<String> question = ArgumentCaptor.forClass(String.class);
+            verify(ai, org.mockito.Mockito.times(2)).chat(anyString(), question.capture());
+            assertThat(question.getAllValues().get(0)).doesNotContain(IIN).doesNotContain("701 123 45 67")
+                    .contains("[ИИН скрыт]", "[телефон скрыт]", "где расписание?");
+            assertThat(forStudent.sources()).singleElement()
+                    .satisfies(source -> assertThat(source.documentName()).doesNotContain(IIN));
+            assertThat(forTeacher.sources()).singleElement()
+                    .satisfies(source -> assertThat(source.documentName()).isEqualTo(NAME));
+        }
+
+        @Test
+        void teacherPhoneStaysReadableNextToTheirEmailOtherPhonesDoNot() {
+            String text = "Преподаватель: teacher@uni.kz, +7 (702) 555-12-34. Староста: 87011234567.";
+
+            String masked = privacy.mask(text, "teacher@uni.kz", "77025551234").text();
+
+            assertThat(masked).contains("teacher@uni.kz", "+7 (702) 555-12-34").contains("Староста: [телефон скрыт]");
         }
     }
 }

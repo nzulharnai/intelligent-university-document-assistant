@@ -2,6 +2,8 @@ package com.university.docassistant.service;
 
 import com.university.docassistant.config.AssignmentStatusMigration;
 import com.university.docassistant.config.DocumentSearchSchema;
+import com.university.docassistant.config.JpaSettings;
+import com.university.docassistant.config.PrivacyProperties;
 import com.university.docassistant.dto.AssignmentDtos.AssignmentResponse;
 import com.university.docassistant.dto.AssignmentDtos.UpdateAssignmentRequest;
 import com.university.docassistant.dto.TaskExtractDto;
@@ -10,9 +12,11 @@ import com.university.docassistant.entity.Assignment;
 import com.university.docassistant.entity.AssignmentStatus;
 import com.university.docassistant.entity.Course;
 import com.university.docassistant.entity.Document;
+import com.university.docassistant.entity.DocumentChunk;
 import com.university.docassistant.entity.DocumentCategory;
 import com.university.docassistant.entity.DocumentType;
 import com.university.docassistant.entity.DocumentVisibility;
+import com.university.docassistant.entity.OcrStatus;
 import com.university.docassistant.entity.Role;
 import com.university.docassistant.entity.Task;
 import com.university.docassistant.entity.TaskStatus;
@@ -21,7 +25,9 @@ import com.university.docassistant.entity.User;
 import com.university.docassistant.exception.ApiException;
 import com.university.docassistant.exception.ErrorCodes;
 import com.university.docassistant.repository.AssignmentRepository;
+import com.university.docassistant.repository.DocumentChunkRepository;
 import com.university.docassistant.repository.DocumentRepository;
+import com.university.docassistant.repository.DocumentSummary;
 import com.university.docassistant.repository.EnrollmentRepository;
 import com.university.docassistant.repository.TaskRepository;
 import com.university.docassistant.repository.TaskSubmissionRepository;
@@ -32,6 +38,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -54,15 +61,17 @@ import static org.mockito.Mockito.when;
  * The same guarantees as {@link AssignmentLifecycleTest} and {@link AssignmentDraftTest}, against the real queries (native fanOut, JPQL activity and
  * enrollment filters) on PostgreSQL. Opt-in, so the normal build needs no database:
  * <pre>
- * mvnw test -Dtest=AssignmentLifecyclePostgresTest -Dit.db.url=jdbc:postgresql://localhost:5433/lifecycle_test
- *     [-Dit.db.user=postgres] [-Dit.db.password=...]
+ * mvnw.cmd test "-Dtest=*PostgresTest" "-Dsurefire.failIfNoSpecifiedTests=false"
+ *     "-Dit.db.url=jdbc:postgresql://localhost:5432/doc_assistant_test" "-Dit.db.user=postgres" "-Dit.db.password=..."
  * </pre>
- * Point it at an empty, throwaway database: the schema is created and dropped (ddl-auto=create-drop).
+ * Only ever the separate doc_assistant_test database (README "Тесты"), never doc_assistant_db: the schema is created
+ * and dropped (ddl-auto=create-drop).
  */
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @EnabledIfSystemProperty(named = "it.db.url", matches = ".+")
-@Import({AssignmentService.class, AssignmentEvents.class, AuditService.class})
+@Import({JpaSettings.class, AssignmentService.class, AssignmentEvents.class, AuditService.class, DocumentPrivacyService.class})
+@EnableConfigurationProperties(PrivacyProperties.class)
 class AssignmentLifecyclePostgresTest {
 
     @DynamicPropertySource
@@ -74,6 +83,8 @@ class AssignmentLifecyclePostgresTest {
 
     @MockBean
     private AccessControlService access;
+    @MockBean
+    private NotificationService notifications;
 
     @Autowired
     private AssignmentService service;
@@ -87,6 +98,8 @@ class AssignmentLifecyclePostgresTest {
     private EnrollmentRepository enrollments;
     @Autowired
     private DocumentRepository documents;
+    @Autowired
+    private DocumentChunkRepository chunks;
     @Autowired
     private EntityManager em;
     @Autowired
@@ -368,7 +381,9 @@ class AssignmentLifecyclePostgresTest {
         assertThat(drafts).extracting(AssignmentResponse::title, AssignmentResponse::duplicateOfId)
                 .containsExactlyInAnyOrder(tuple("Лаб. 1", original.getId()), tuple("Лаб. 2", null));
 
-        assignments.deleteById(original.getId());
+        // Through the service, as the app deletes: the original was handed out with the drafts' analysis, and
+        // tasks.assignment_id (no cascade, student work is never dropped silently) needs its tasks gone first.
+        service.delete(original.getId(), "t@uni.kz");
         flushAndClear();
         assertThat(assignments.findDraftViewsByCourseId(course.getId(), PageRequest.of(0, 10)).getContent())
                 .extracting(AssignmentResponse::duplicateOfId).containsOnlyNulls();
@@ -409,6 +424,98 @@ class AssignmentLifecyclePostgresTest {
                 PageRequest.of(0, 10)).getContent()).isEmpty();
         assertThat(documents.searchVisibleIds("лабораторная", true, List.of(course.getId()), true,
                 PageRequest.of(0, 10)).getContent()).containsExactly(syllabus.getId());
+    }
+
+    /** Fix 2 (B): the student queries leave out what the AI or the OCR failed on, until a type is set by hand. */
+    @Test
+    void studentQueriesLeaveOutFailedDocumentsTeacherQueriesKeepThem() {
+        new DocumentSearchSchema(jdbc).run(null);
+        Document failedAi = scan("failed-ai.pdf", AiStatus.FAILED, null);
+        Document failedOcr = scan("failed-ocr.pdf", AiStatus.DONE, OcrStatus.FAILED);
+        Document typedByHand = scan("typed-by-hand.pdf", AiStatus.MANUAL, OcrStatus.FAILED);
+        Document pending = scan("pending.pdf", AiStatus.PENDING, OcrStatus.PENDING);
+        for (Document doc : List.of(syllabus, failedAi, failedOcr, typedByHand, pending)) {
+            Document managed = em.find(Document.class, doc.getId());
+            managed.setMaskedText("лабораторная работа");
+            DocumentChunk chunk = new DocumentChunk();
+            chunk.setDocument(managed);
+            chunk.setEndOffset(19);
+            chunk.setContent("лабораторная работа");
+            persist(chunk);
+        }
+        flushAndClear();
+        List<Long> courseIds = List.of(course.getId());
+
+        assertThat(listed(false, false)).containsExactlyInAnyOrder(syllabus.getId(), typedByHand.getId());
+        assertThat(listed(true, false)).containsExactlyInAnyOrder(syllabus.getId(), failedAi.getId(),
+                failedOcr.getId(), typedByHand.getId(), pending.getId());
+        assertThat(listed(true, true)).as("Требуют проверки").containsExactlyInAnyOrder(failedAi.getId(), failedOcr.getId());
+        assertThat(documents.findAllSummaries(course.getId(), true, PageRequest.of(0, 10)).getContent())
+                .extracting(DocumentSummary::id).containsExactlyInAnyOrder(failedAi.getId(), failedOcr.getId());
+
+        assertThat(documents.searchVisibleIds("лабораторная", false, courseIds, false, PageRequest.of(0, 10))
+                .getContent()).containsExactlyInAnyOrder(syllabus.getId(), typedByHand.getId());
+        assertThat(documents.searchVisibleIds("лабораторная", false, courseIds, true, PageRequest.of(0, 10))
+                .getTotalElements()).isEqualTo(5);
+
+        assertThat(chunks.searchInCourses(courseIds, false, "лабораторная", 10))
+                .extracting(DocumentChunkRepository.ChunkHit::getDocumentId)
+                .containsExactlyInAnyOrder(syllabus.getId(), typedByHand.getId());
+        assertThat(chunks.searchInCourses(courseIds, true, "лабораторная", 10)).hasSize(5);
+    }
+
+    /**
+     * Fix 2 (B), native SQL: the search count query agrees with its page, a failed scan reappears in student search
+     * and course Q&A retrieval once its type is set by hand (MANUAL), and TEACHER_ONLY stays out whatever the status.
+     */
+    @Test
+    void typingAFailedScanByHandBringsItBackIntoStudentSearchAndChunks() {
+        new DocumentSearchSchema(jdbc).run(null);
+        Document examKey = scan("exam-key.pdf", AiStatus.DONE, OcrStatus.FAILED);
+        Document answers = scan("answers.pdf", AiStatus.MANUAL, null);
+        for (Document doc : List.of(examKey, answers)) {
+            Document managed = em.find(Document.class, doc.getId());
+            managed.setMaskedText("экзаменационный билет");
+            if (doc == answers) {
+                managed.setVisibility(DocumentVisibility.TEACHER_ONLY);
+            }
+            DocumentChunk chunk = new DocumentChunk();
+            chunk.setDocument(managed);
+            chunk.setEndOffset(21);
+            chunk.setContent("экзаменационный билет");
+            persist(chunk);
+        }
+        flushAndClear();
+        List<Long> courseIds = List.of(course.getId());
+
+        var student = documents.searchVisibleIds("билет", false, courseIds, false, PageRequest.of(0, 10));
+        assertThat(student.getContent()).isEmpty();
+        assertThat(student.getTotalElements()).as("count query").isZero();
+        assertThat(chunks.searchInCourses(courseIds, false, "билет", 10)).isEmpty();
+        assertThat(documents.searchVisibleIds("билет", false, courseIds, true, PageRequest.of(0, 10))
+                .getTotalElements()).as("the teacher sees both").isEqualTo(2);
+
+        em.find(Document.class, examKey.getId()).setAiStatus(AiStatus.MANUAL); // "Указать тип вручную"
+        flushAndClear();
+
+        student = documents.searchVisibleIds("билет", false, courseIds, false, PageRequest.of(0, 10));
+        assertThat(student.getContent()).containsExactly(examKey.getId());
+        assertThat(student.getTotalElements()).isEqualTo(1);
+        assertThat(chunks.searchInCourses(courseIds, false, "билет", 10))
+                .extracting(DocumentChunkRepository.ChunkHit::getDocumentId).containsExactly(examKey.getId());
+    }
+
+    private List<Long> listed(boolean includeTeacherOnly, boolean needsReview) {
+        return documents.findSummariesInCourses(List.of(course.getId()), includeTeacherOnly, course.getId(),
+                needsReview, PageRequest.of(0, 10)).getContent().stream().map(DocumentSummary::id).toList();
+    }
+
+    private Document scan(String name, AiStatus aiStatus, OcrStatus ocrStatus) {
+        return persist(Document.builder().originalFileName(name)
+                .storedFileName(UUID.randomUUID().toString()).contentType("application/pdf").fileSize(1L)
+                .category(DocumentCategory.OTHER).type(DocumentType.OTHER).aiStatus(aiStatus).ocrStatus(ocrStatus)
+                .visibility(DocumentVisibility.COURSE_STUDENTS).course(course).owner(teacher)
+                .uploadedAt(LocalDateTime.now()).build());
     }
 
     private Assignment fromSyllabus(String title) {

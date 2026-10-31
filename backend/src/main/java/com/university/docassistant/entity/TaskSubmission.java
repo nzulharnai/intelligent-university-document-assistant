@@ -17,6 +17,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
@@ -27,6 +28,8 @@ import java.time.LocalDateTime;
  * STUDENT uploads anything: course documents are added by the course's teacher or ADMIN. Submissions are not course
  * documents, so they are never indexed for search or Q&A, and only the student and the course's teacher (or ADMIN)
  * can read them. Rows go away with their task (ON DELETE CASCADE), however the task is removed.
+ * One hand-in (one request, all its files) is one {@code version}: the task's highest version is its current
+ * submission, earlier ones stay as history and are never removed by a resubmission.
  */
 @Entity
 @Table(name = "task_submissions", indexes = {
@@ -71,6 +74,15 @@ public class TaskSubmission {
 
     @Column(name = "submitted_at", nullable = false, updatable = false)
     private LocalDateTime submittedAt;
+
+    /**
+     * 1 for the first hand-in of the task, then one more per resubmission. Rows from before versions existed are all
+     * version 1 (the column default): files used to pile up into one submission.
+     */
+    @Column(nullable = false)
+    @ColumnDefault("1")
+    @Builder.Default
+    private int version = 1;
 
     @PrePersist
     protected void onCreate() {

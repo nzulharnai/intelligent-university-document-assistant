@@ -1,16 +1,18 @@
 import { File, FileImage, FileSpreadsheet, FileText } from 'lucide-react'
+import { BADGE_TONES } from '../components/ui/styles'
 
 // Must match INLINE_CONTENT_TYPES in DocumentController: only these are served by /documents/{id}/view.
 const PREVIEWABLE_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 
+// Familiar hues per format (PDF red, Word blue, Excel green), from the theme tokens so they work in both themes.
 const FORMATS = {
-  pdf: { label: 'PDF', icon: FileText, badge: 'bg-red-50 text-red-700 ring-red-200', tile: 'bg-red-50 text-red-600' },
-  doc: { label: 'DOCX', icon: FileText, badge: 'bg-blue-50 text-blue-700 ring-blue-200', tile: 'bg-blue-50 text-blue-600' },
-  sheet: { label: 'XLSX', icon: FileSpreadsheet, badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200', tile: 'bg-emerald-50 text-emerald-600' },
-  image: { label: 'IMG', icon: FileImage, badge: 'bg-violet-50 text-violet-700 ring-violet-200', tile: 'bg-violet-50 text-violet-600' },
+  pdf: { label: 'PDF', icon: FileText, badge: `${BADGE_TONES.danger} ring-current/15`, tile: 'bg-danger-soft text-danger' },
+  doc: { label: 'DOCX', icon: FileText, badge: `${BADGE_TONES.primary} ring-current/15`, tile: 'bg-primary-soft text-primary' },
+  sheet: { label: 'XLSX', icon: FileSpreadsheet, badge: `${BADGE_TONES.success} ring-current/15`, tile: 'bg-success-soft text-success' },
+  image: { label: 'IMG', icon: FileImage, badge: `${BADGE_TONES.accent} ring-current/15`, tile: 'bg-accent-soft text-accent-fg' },
 }
 
-const OTHER_STYLE = { icon: File, badge: 'bg-slate-100 text-slate-600 ring-slate-200', tile: 'bg-slate-100 text-slate-500' }
+const OTHER_STYLE = { icon: File, badge: `${BADGE_TONES.neutral} ring-current/15`, tile: 'bg-neutral-soft text-neutral-fg' }
 
 function baseContentType(contentType) {
   return (contentType ?? '').split(';')[0].trim().toLowerCase()

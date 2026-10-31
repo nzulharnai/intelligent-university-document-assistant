@@ -3,9 +3,81 @@
 /* Tailwind v4 equivalent of darkMode: "class": dark: variants apply under <html class="dark">. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Semantic design tokens. Each --color-* becomes a utility (bg-primary, text-fg-muted, border-line, ring-ring...).
+ * The values below are the light theme; .dark further down redefines the same variables, so a token class needs
+ * no dark: twin. Every text/background pair is checked for WCAG AA (4.5:1 text, 3:1 control edges).
+ * Rule of thumb: X = solid fill, icons and borders; X-soft = tinted background; X-fg = text on X-soft.
+ */
 @theme {
+  /* Brand */
+  --color-primary: #1d6fe0;
+  --color-primary-hover: #185dc0;
+  --color-primary-pressed: #134c9e;
+  --color-primary-soft: #eaf2fd;
+  --color-primary-fg: #185dc0;
+  --color-on-primary: #ffffff;
+  --color-ring: rgb(29 111 224 / 0.35);
+  /* Decoration only (clouds, illustrations): 2.8:1 on white, never text or a sole indicator. */
+  --color-accent: #38a3e8;
+  --color-accent-soft: #e6f4fc;
+  --color-accent-fg: #0a6696;
+
+  /* Backgrounds and lines */
+  --color-page: #f6f9fc;
+  --color-page-alt: #eef4fa;
+  --color-surface: #ffffff;
+  --color-line: #dce6f0;
+  --color-line-subtle: #eaf0f6;
+  /* Edges of inputs, selects and checkboxes: 3:1 against surface, page and page-alt (WCAG 1.4.11). */
+  --color-line-strong: #788ca3;
+
+  /* Text */
+  --color-fg: #0f233d;
+  --color-fg-secondary: #4b5f77;
+  --color-fg-muted: #5b6e84;
+
+  /* Status (info = primary) */
+  --color-success: #2f7d32;
+  --color-success-soft: #eaf6ea;
+  --color-success-fg: #2f7d32;
+  --color-warning: #a86400;
+  --color-warning-soft: #fff5e5;
+  --color-warning-fg: #955a00;
+  --color-danger: #c53030;
+  --color-danger-soft: #fdecec;
+  --color-danger-fg: #c53030;
+  --color-on-danger: #ffffff;
+  --color-neutral-soft: #eef4fa;
+  --color-neutral-fg: #4b5f77;
+
+  /* Backdrop behind dialogs */
+  --color-overlay: rgb(15 35 61 / 0.45);
+
+  /* Shape */
+  --radius-card: 14px;
+  --radius-control: 10px;
+  --shadow-card: 0 1px 2px rgb(15 35 61 / 0.06), 0 10px 30px rgb(15 35 61 / 0.08);
+  --shadow-soft: 0 1px 2px rgb(15 35 61 / 0.06);
+
+  /* Typography: Inter (self-hosted, @fontsource-variable/inter in main.jsx) covers Russian and Kazakh letters. */
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  --text-title: 1.75rem; /* 28/34 semibold: page title */
+  --text-title--line-height: 2.125rem;
+  --text-title--font-weight: 600;
+  --text-section: 1.25rem; /* 20/28 semibold: section header */
+  --text-section--line-height: 1.75rem;
+  --text-section--font-weight: 600;
+  --text-body: 0.9375rem; /* 15/24 */
+  --text-body--line-height: 1.5rem;
+  --text-small: 0.8125rem; /* 13/20 */
+  --text-small--line-height: 1.25rem;
+  /* Comfortable line length for document text (max-w-reading). */
+  --container-reading: 75ch;
+
   --animate-step-in: step-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-shake: shake 0.4s ease-in-out;
+  --animate-shimmer: shimmer 1.4s linear infinite;
 
   @keyframes step-in {
     from {
@@ -18,6 +90,15 @@
     }
   }
 
+  @keyframes shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
+
   @keyframes shake {
     0%, 100% { transform: translateX(0); }
     20%, 60% { transform: translateX(-6px); }
@@ -25,9 +106,64 @@
   }
 }
 
+/*
+ * Auth page hero (AuthHero): a vertical sky gradient that fades into the page, clouds and hills. Illustration
+ * colors live here as variables, so the night theme only swaps them.
+ */
+.auth-sky {
+  --sky-top: #b7dbf8;
+  --sky-mid: #d8ebfb;
+  --cloud-fill: #ffffff;
+  --cloud-strength: 1;
+  --hill-far: #d0e4f6;
+  --hill-near: #e4eff9;
+  background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 48%, var(--color-page) 100%);
+}
+
+.dark .auth-sky {
+  --sky-top: #10284a;
+  --sky-mid: #0e1f39;
+  --cloud-fill: #c9dcf3;
+  --cloud-strength: 0.11;
+  --hill-far: #12284a;
+  --hill-near: #0f1e34;
+}
+
+/* One cloud layer: two identical halves moved left by exactly one half, so the loop has no seam. */
+.cloud-layer {
+  display: flex;
+  width: 200%;
+  opacity: calc(var(--layer-opacity, 1) * var(--cloud-strength));
+  animation: cloud-drift var(--cloud-speed, 110s) linear infinite;
+  will-change: transform;
+}
+
+@keyframes cloud-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+/* Calm on request and on small screens (the hero is a 180px header there). */
+@media (prefers-reduced-motion: reduce), (max-width: 639px) {
+  .cloud-layer {
+    animation: none;
+  }
+}
+
+/* Loading placeholder: a sky-tinted band sweeps across (see Skeleton). */
+.skeleton {
+  background-image: linear-gradient(90deg, var(--color-page-alt) 25%, var(--color-primary-soft) 50%, var(--color-page-alt) 75%);
+  background-size: 200% 100%;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-step-in,
-  .animate-shake {
+  .animate-shake,
+  .animate-shimmer {
     animation: none;
   }
 }
@@ -38,11 +174,56 @@ body,
   min-height: 100%;
 }
 
-body {
-  @apply bg-slate-50 font-sans text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+/* "Night blue": the same tokens re-tinted. Primary is light here, so text on it turns dark (on-primary). */
+.dark {
+  /* Native controls (select, scrollbars, date pickers) follow the theme too. */
+  color-scheme: dark;
+
+  --color-primary: #5aa2f7;
+  --color-primary-hover: #7ab5f9;
+  --color-primary-pressed: #9cc7fb;
+  --color-primary-soft: #16304f;
+  --color-primary-fg: #8cc0fa;
+  --color-on-primary: #0b1626;
+  --color-ring: rgb(90 162 247 / 0.45);
+  --color-accent-soft: #0f3047;
+  --color-accent-fg: #7cc8f2;
+
+  --color-page: #0b1626;
+  --color-page-alt: #0e1b2e;
+  --color-surface: #111f33;
+  --color-line: #1f3350;
+  --color-line-subtle: #18293f;
+  --color-line-strong: #5a7393;
+
+  --color-fg: #e7eff8;
+  --color-fg-secondary: #b4c3d4;
+  --color-fg-muted: #93a7bd;
+
+  --color-success: #6cc27a;
+  --color-success-soft: #13301f;
+  --color-success-fg: #7bcb86;
+  --color-warning: #e0a040;
+  --color-warning-soft: #33270f;
+  --color-warning-fg: #f2b95e;
+  --color-danger: #f28b8b;
+  --color-danger-soft: #3a1a20;
+  --color-danger-fg: #f59a9a;
+  --color-on-danger: #0b1626;
+  --color-neutral-soft: #1a2b42;
+  --color-neutral-fg: #b4c3d4;
+
+  --color-overlay: rgb(3 8 16 / 0.65);
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 30px rgb(0 0 0 / 0.25);
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3);
 }
 
-/* Native controls (select, scrollbars, date pickers) follow the theme too. */
-.dark {
-  color-scheme: dark;
+body {
+  @apply bg-page font-sans text-body text-fg antialiased;
+}
+
+/* Columns of dates, sizes and counts line up. */
+table {
+  font-variant-numeric: tabular-nums;
 }

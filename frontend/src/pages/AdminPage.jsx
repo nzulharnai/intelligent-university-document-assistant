@@ -12,6 +12,9 @@ import AdminTeacherRequests from '../components/AdminTeacherRequests'
 import ErrorState from '../components/ErrorState'
 import SearchSelect from '../components/SearchSelect'
 import { formatDateTime } from '../utils/dates'
+import PageHeader from '../components/ui/PageHeader'
+import Skeleton from '../components/ui/Skeleton'
+import { controlClass, tableHeadClass, tableRowClass } from '../components/ui/styles'
 
 
 function formatBytes(bytes) {
@@ -144,56 +147,43 @@ export default function AdminPage() {
   }
 
   const cards = [
-    { icon: Users, label: 'Всего пользователей', value: stats?.totalUsers, accent: 'from-indigo-500 to-violet-500' },
-    { icon: FileStack, label: 'Документов в хранилище', value: stats?.totalDocuments, accent: 'from-cyan-500 to-sky-500' },
+    { icon: Users, label: 'Всего пользователей', value: stats?.totalUsers },
+    { icon: FileStack, label: 'Документов в хранилище', value: stats?.totalDocuments },
     {
       icon: HardDrive,
       label: 'Использование диска',
       value: stats ? formatBytes(stats.totalStorageBytes) : undefined,
       hint: 'Суммарный размер файлов',
-      accent: 'from-emerald-500 to-teal-500',
     },
-    { icon: BookOpen, label: 'Курсов', value: stats?.totalCourses, accent: 'from-violet-500 to-fuchsia-500' },
-    { icon: GraduationCap, label: 'Записей на курсы', value: stats?.totalEnrollments, accent: 'from-amber-500 to-orange-500' },
-    { icon: ClipboardList, label: 'Заданий', value: stats?.totalAssignments, accent: 'from-rose-500 to-pink-500' },
+    { icon: BookOpen, label: 'Курсов', value: stats?.totalCourses },
+    { icon: GraduationCap, label: 'Записей на курсы', value: stats?.totalEnrollments },
+    { icon: ClipboardList, label: 'Заданий', value: stats?.totalAssignments },
   ]
   const statsLoading = stats === null && !statsError
 
   return (
-    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950">
+    <div className="min-h-screen bg-page">
       <Navbar />
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-        <div className="flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-200">
-            <ShieldCheck className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Панель деканата</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Пользователи, роли, курсы и системный журнал</p>
-          </div>
-        </div>
+        <PageHeader icon={ShieldCheck} title="Панель деканата" subtitle="Пользователи, роли, курсы и системный журнал" />
 
         {statsError && (
           <ErrorState compact message={`Не удалось загрузить статистику: ${statsError}`} onRetry={loadStats} className="mt-6" />
         )}
 
-        <section className="mt-6 grid gap-4 sm:grid-cols-3">
-          {cards.map(({ icon: Icon, label, value, hint, accent }) => (
-            <div
-              key={label}
-              className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-            >
-              <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${accent}`} />
+        <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Статистика" aria-busy={statsLoading || undefined}>
+          {cards.map(({ icon: Icon, label, value, hint }) => (
+            <div key={label} className="rounded-card border border-line bg-surface p-5 shadow-soft">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
-                  <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900 dark:text-white">
-                    {statsLoading ? <span className="inline-block h-8 w-16 animate-pulse rounded bg-slate-100 dark:bg-slate-800" /> : (value ?? '—')}
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{label}</p>
+                  <p className="mt-2 text-[1.75rem] leading-9 font-semibold tabular-nums text-fg">
+                    {statsLoading ? <Skeleton className="h-9 w-20" /> : (value ?? '—')}
                   </p>
-                  {hint && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{hint}</p>}
+                  {hint && <p className="mt-1 text-small text-fg-muted">{hint}</p>}
                 </div>
-                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white ${accent}`}>
-                  <Icon className="h-5 w-5" />
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-primary-soft text-primary">
+                  <Icon className="h-5 w-5" aria-hidden="true" />
                 </span>
               </div>
             </div>
@@ -205,27 +195,27 @@ export default function AdminPage() {
           onDecided={(updated) => setUsers((current) => current.map((item) => (item.id === updated.id ? updated : item)))}
         />
 
-        <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+        <section className="mt-8 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          <div className="flex flex-col gap-3 border-b border-line-subtle px-5 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6">
             <div className="min-w-0">
-              <h2 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
+              <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
                 Пользователи
-                {usersPage && <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300">{usersPage.totalElements}</span>}
+                {usersPage && <span className="rounded-full bg-page-alt px-2 py-0.5 text-xs font-semibold tabular-nums text-fg-secondary">{usersPage.totalElements}</span>}
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-1 max-w-reading text-small text-fg-muted">
                 После смены роли пользователю нужно войти заново — старый токен перестаёт действовать. Бывший студент
                 отчисляется со всех курсов, курсы бывшего преподавателя остаются без преподавателя.
               </p>
             </div>
             <label className="relative block w-full shrink-0 sm:w-64">
               <span className="sr-only">Поиск по email или имени</span>
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
               <input
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Email или имя (от 2 символов)"
-                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 py-1.5 pl-8 pr-2.5 text-sm text-slate-900 dark:text-white outline-none transition placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-500/30"
+                className={`${controlClass} !pl-8`}
               />
             </label>
           </div>
@@ -240,18 +230,18 @@ export default function AdminPage() {
               }}
             />
           ) : usersLoading ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500 dark:text-slate-400">
-              <Loader2 className="h-4 w-4 animate-spin" /> {query ? 'Поиск…' : 'Загрузка пользователей…'}
+            <div role="status" className="flex items-center justify-center gap-2 py-16 text-sm text-fg-muted">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" /> {query ? 'Поиск…' : 'Загрузка пользователей…'}
             </div>
           ) : users.length === 0 ? (
-            <p className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
+            <p className="py-16 text-center text-sm text-fg-muted">
               {query ? `Никого не найдено по запросу «${query}»` : 'Пользователей нет'}
             </p>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] text-left text-sm">
-                  <thead className={tableHead}>
+              <div className="max-h-[70vh] overflow-auto">
+                <table className="w-full min-w-[860px] text-left text-sm [&_td]:!px-3 [&_th]:!px-3">
+                  <thead className={tableHeadClass}>
                     <tr>
                       <th className="px-4 py-3 font-medium">ID</th>
                       <th className="px-4 py-3 font-medium">Имя</th>
@@ -262,43 +252,37 @@ export default function AdminPage() {
                       <th className="px-4 py-3 font-medium" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tbody>
                     {users.map((item) => {
                       const isSelf = item.email === currentUser?.email
                       const selected = selectedRoles[item.id] ?? item.role
                       const changed = selected !== item.role
                       const saving = savingId === item.id
                       return (
-                        <tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50">
-                          <td className="px-4 py-3 tabular-nums text-slate-500 dark:text-slate-400">{item.id}</td>
-                          <td className="max-w-[200px] px-4 py-3">
-                            <span className="block truncate font-medium text-slate-900 dark:text-white" title={item.fullName}>
+                        <tr key={item.id} className={tableRowClass}>
+                          <td className="px-4 py-3 tabular-nums text-fg-muted">{item.id}</td>
+                          <td className="px-4 py-3">
+                            <span className="block max-w-[140px] truncate font-medium text-fg" title={item.fullName}>
                               {item.fullName || '—'}
                             </span>
-                            {isSelf && <span className="text-xs text-indigo-600 dark:text-indigo-400">Это вы</span>}
+                            {isSelf && <span className="text-xs text-primary-fg">Это вы</span>}
                           </td>
-                          <td className="max-w-[220px] px-4 py-3">
-                            <span className="block truncate text-slate-700 dark:text-slate-200" title={item.email}>{item.email}</span>
+                          <td className="px-4 py-3">
+                            <span className="block max-w-[150px] truncate text-fg" title={item.email}>{item.email}</span>
                           </td>
                           <td className="whitespace-nowrap px-4 py-3">
                             {item.emailVerified ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-success-fg">
                                 <BadgeCheck className="h-4 w-4" /> Подтверждён
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-warning-fg">
                                 <CircleAlert className="h-4 w-4" /> Не подтверждён
                               </span>
                             )}
                           </td>
                           <td className="whitespace-nowrap px-4 py-3">
-                            <span
-                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
-                                ROLE_BADGE_STYLES[item.role] ?? DEFAULT_ROLE_BADGE_STYLE
-                              }`}
-                            >
-                              {roleLabel(item.role)}
-                            </span>
+                            <RoleBadge role={item.role} />
                           </td>
                           <td className="px-4 py-3">
                             <select
@@ -307,7 +291,7 @@ export default function AdminPage() {
                               disabled={isSelf || saving}
                               title={isSelf ? 'Нельзя изменить собственную роль' : undefined}
                               aria-label={`Новая роль для ${item.email}`}
-                              className="w-full min-w-[150px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-sm text-slate-900 dark:text-white outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-800/50 disabled:text-slate-400 dark:disabled:text-slate-500"
+                              className={`${controlClass} min-w-[130px] !py-1.5`}
                             >
                               {ROLES.map(({ value, label }) => (
                                 <option key={value} value={value}>{label}</option>
@@ -315,12 +299,12 @@ export default function AdminPage() {
                             </select>
                           </td>
                           <td className="whitespace-nowrap px-4 py-3">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex flex-col items-stretch justify-end gap-1.5 xl:flex-row xl:items-center xl:gap-2">
                               <button
                                 type="button"
                                 onClick={() => handleSave(item)}
                                 disabled={!changed || saving}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-400 dark:disabled:text-slate-500 disabled:shadow-none"
+                                className="inline-flex h-8 items-center gap-1.5 rounded-control bg-primary px-3 text-small font-semibold text-on-primary shadow-soft transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:cursor-not-allowed disabled:bg-page-alt disabled:text-fg-muted disabled:shadow-none"
                               >
                                 {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                                 Сохранить
@@ -330,7 +314,7 @@ export default function AdminPage() {
                                 onClick={() => setDeleteTarget(item)}
                                 disabled={isSelf || saving}
                                 title={isSelf ? 'Нельзя удалить собственный аккаунт' : 'Удалить пользователя'}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 dark:border-red-500/30 px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 transition hover:bg-red-50 dark:hover:bg-red-500/10 disabled:cursor-not-allowed disabled:border-slate-200 dark:disabled:border-slate-800 disabled:text-slate-400 dark:disabled:text-slate-500 disabled:hover:bg-transparent"
+                                className="inline-flex h-8 items-center gap-1.5 rounded-control border border-danger/40 px-3 text-small font-semibold text-danger-fg transition-colors hover:bg-danger-soft focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:cursor-not-allowed disabled:border-line disabled:text-fg-muted disabled:hover:bg-transparent"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                                 Удалить
@@ -362,7 +346,7 @@ export default function AdminPage() {
           onConfirm={handleDelete}
           onCancel={cancelDelete}
         >
-          Вы уверены, что хотите удалить пользователя <b className="text-slate-900 dark:text-white">{deleteTarget.email}</b>?
+          Вы уверены, что хотите удалить пользователя <b className="text-fg">{deleteTarget.email}</b>?
           Все его документы будут безвозвратно удалены.
         </ConfirmDialog>
       )}
@@ -377,14 +361,25 @@ function ShowMoreButton({ loading, onClick }) {
       type="button"
       onClick={onClick}
       disabled={loading}
-      className="flex w-full items-center justify-center gap-2 border-t border-slate-100 dark:border-slate-800 py-2.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60"
+      className="flex w-full items-center justify-center gap-2 border-t border-line-subtle py-2.5 text-sm font-medium text-primary-fg hover:bg-page-alt disabled:opacity-60"
     >
       {loading && <Loader2 className="h-4 w-4 animate-spin" />} Показать ещё
     </button>
   )
 }
 
-const tableHead = 'border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400'
+const tableHead = tableHeadClass
+
+// Role name with its icon, so the role never reads by color alone.
+function RoleBadge({ role }) {
+  const Icon = ROLES.find((item) => item.value === role)?.icon
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${ROLE_BADGE_STYLES[role] ?? DEFAULT_ROLE_BADGE_STYLE}`}>
+      {Icon && <Icon className="h-3.5 w-3.5" aria-hidden="true" />}
+      {roleLabel(role)}
+    </span>
+  )
+}
 
 /** All courses with their teacher, a page at a time; ADMIN can hand a course over to another teacher. */
 function AdminCourses() {
@@ -439,13 +434,13 @@ function AdminCourses() {
   }
 
   return (
-    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-      <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4">
-        <h2 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
+    <section className="mt-8 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+      <div className="border-b border-line px-5 py-4">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
           Курсы
-          {page && <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300">{page.totalElements}</span>}
+          {page && <span className="rounded-full bg-page-alt px-2 py-0.5 text-xs font-semibold text-fg-secondary">{page.totalElements}</span>}
         </h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400">Преподаватель управляет только своими курсами и их документами.</p>
+        <p className="text-xs text-fg-muted">Преподаватель управляет только своими курсами и их документами.</p>
       </div>
       {error ? (
         <ErrorState
@@ -458,9 +453,9 @@ function AdminCourses() {
           }}
         />
       ) : page === null ? (
-        <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Загрузка курсов…</div>
+        <div role="status" className="flex items-center justify-center gap-2 py-10 text-sm text-fg-muted"><Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" /> Загрузка курсов…</div>
       ) : page.content.length === 0 ? (
-        <p className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">Курсов пока нет</p>
+        <p className="py-10 text-center text-sm text-fg-muted">Курсов пока нет</p>
       ) : (
         <>
           {/* No overflow-x wrapper: the teacher picker's dropdown must not be clipped. */}
@@ -472,24 +467,24 @@ function AdminCourses() {
                 <th className="px-4 py-3 font-medium">Назначить</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            <tbody className="divide-y divide-line-subtle">
               {page.content.map((course) => (
-                <tr key={course.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50">
+                <tr key={course.id} className={tableRowClass}>
                   <td className="px-4 py-3">
-                    <Link to={`/courses/${course.id}`} className="font-medium text-slate-900 dark:text-white hover:text-indigo-600 hover:underline">
+                    <Link to={`/courses/${course.id}`} className="font-medium text-fg hover:text-primary-fg hover:underline">
                       {course.code ? `${course.code} · ` : ''}{course.title}
                     </Link>
-                    <span className="mt-0.5 block text-xs text-slate-600 dark:text-slate-300 sm:hidden">
+                    <span className="mt-0.5 block text-xs text-fg-secondary sm:hidden">
                       {course.teacherEmail ?? 'преподаватель не назначен'}
                     </span>
                   </td>
-                  <td className="hidden px-4 py-3 text-slate-700 dark:text-slate-200 sm:table-cell">
-                    {course.teacherEmail ?? <span className="text-amber-700 dark:text-amber-300">не назначен</span>}
+                  <td className="hidden px-4 py-3 text-fg sm:table-cell">
+                    {course.teacherEmail ?? <span className="text-warning-fg">не назначен</span>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <TeacherPicker course={course} disabled={savingId === course.id} onPick={(teacherId) => assign(course, teacherId)} />
-                      {savingId === course.id && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-slate-400" />}
+                      {savingId === course.id && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-fg-muted" />}
                     </div>
                   </td>
                 </tr>
@@ -533,6 +528,7 @@ const ACTION_LABELS = {
   DOCUMENT_DELETED: 'Удаление документа',
   COURSE_CREATED: 'Создание курса',
   COURSE_TEACHER_CHANGED: 'Смена преподавателя',
+  PROFILE_UPDATED: 'Изменение профиля',
   STUDENT_ENROLLED: 'Запись на курс',
   STUDENT_UNENROLLED: 'Отчисление с курса',
   ASSIGNMENT_CREATED: 'Создание задания',
@@ -551,6 +547,9 @@ const ACTION_LABELS = {
   DOCUMENT_CLASSIFIED: 'Классификация документа',
   BATCH_IMPORTED: 'Пакетный импорт',
   TASK_SUBMITTED: 'Сдача решения',
+  TASK_GRADED: 'Оценка работы',
+  TASK_UNGRADED: 'Снятие оценки',
+  REMINDERS_RUN: 'Запуск напоминаний о сроках',
   COURSE_INVITE_REGENERATED: 'Новая ссылка на курс',
   COURSE_JOIN_FAILED: 'Неудачная запись по ссылке',
   TEACHER_REQUEST_APPROVED: 'Заявка преподавателя одобрена',
@@ -580,22 +579,22 @@ function AdminLogs() {
   }
 
   return (
-    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-4">
-        <h2 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
-          <ScrollText className="h-4 w-4 text-indigo-600" /> Системный журнал
+    <section className="mt-8 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+          <ScrollText className="h-4 w-4 text-primary-fg" /> Системный журнал
         </h2>
-        <button type="button" onClick={() => load(0)} disabled={loading} className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline disabled:opacity-60">Обновить</button>
+        <button type="button" onClick={() => load(0)} disabled={loading} className="text-xs font-medium text-primary-fg hover:underline disabled:opacity-60">Обновить</button>
       </div>
       {error ? (
         <div className="p-4"><Alert>{error}</Alert></div>
       ) : !page ? (
-        <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Загрузка журнала…</div>
+        <div role="status" className="flex items-center justify-center gap-2 py-10 text-sm text-fg-muted"><Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" /> Загрузка журнала…</div>
       ) : page.content.length === 0 ? (
-        <p className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">Событий пока нет</p>
+        <p className="py-10 text-center text-sm text-fg-muted">Событий пока нет</p>
       ) : (
         <>
-          <div className="overflow-x-auto">
+          <div className="max-h-[70vh] overflow-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className={tableHead}>
                 <tr>
@@ -605,27 +604,27 @@ function AdminLogs() {
                   <th className="px-4 py-3 font-medium">Подробности</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              <tbody className="divide-y divide-line-subtle">
                 {page.content.map((entry) => (
-                  <tr key={entry.id}>
-                    <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-slate-500 dark:text-slate-400">{formatDateTime(entry.createdAt)}</td>
-                    <td className="max-w-[200px] truncate px-4 py-2.5 text-slate-700 dark:text-slate-200" title={entry.actorEmail}>{entry.actorEmail ?? '—'}</td>
+                  <tr key={entry.id} className={tableRowClass}>
+                    <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-fg-muted">{formatDateTime(entry.createdAt)}</td>
+                    <td className="max-w-[200px] truncate px-4 py-2.5 text-fg" title={entry.actorEmail}>{entry.actorEmail ?? '—'}</td>
                     <td className="whitespace-nowrap px-4 py-2.5">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${entry.action === 'ACCESS_DENIED'
-                        ? 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300'
-                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
+                        ? 'bg-danger-soft text-danger-fg'
+                        : 'bg-page-alt text-fg'}`}
                       >
                         {ACTION_LABELS[entry.action] ?? entry.action}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">{entry.details}</td>
+                    <td className="px-4 py-2.5 text-fg-secondary">{entry.details}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           {!page.last && (
-            <button type="button" onClick={() => load(page.page + 1)} disabled={loading} className="flex w-full items-center justify-center gap-2 border-t border-slate-100 dark:border-slate-800 py-2.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60">
+            <button type="button" onClick={() => load(page.page + 1)} disabled={loading} className="flex w-full items-center justify-center gap-2 border-t border-line-subtle py-2.5 text-sm font-medium text-primary-fg hover:bg-page-alt disabled:opacity-60">
               {loading && <Loader2 className="h-4 w-4 animate-spin" />} Показать ещё
             </button>
           )}

@@ -19,6 +19,7 @@ import com.university.docassistant.repository.CourseRepository;
 import com.university.docassistant.repository.DocumentRepository;
 import com.university.docassistant.repository.EnrollmentRepository;
 import com.university.docassistant.repository.TaskRepository;
+import com.university.docassistant.repository.TaskRepository.SubmitRules;
 import com.university.docassistant.repository.TaskRepository.TaskAccess;
 import com.university.docassistant.repository.TaskSubmissionRepository;
 import com.university.docassistant.repository.UserRepository;
@@ -33,8 +34,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -149,6 +153,27 @@ class AssignmentLifecycleTest {
             verify(audit, never()).record(any(), eq(AuditService.ASSIGNMENT_CLOSED), anyString());
             verify(tasks, never()).deleteByAssignmentIdIn(argThat(ids -> ids.contains(1L)));
         }
+
+        @Test
+        void partialAnalysisKeepsWhatItDidNotFindAndStillAddsWhatItFound() {
+            Assignment published = assignment(1L, "Lab 1");
+            Assignment draft = assignment(2L, "Lab 2");
+            draft.setStatus(AssignmentStatus.DRAFT);
+            when(assignments.findBySourceDocumentId(50L)).thenReturn(List.of(published, draft));
+            activityOn();
+
+            // Lab 1 and Lab 2 may sit in the part of the text the AI did not answer for.
+            int found = service.replaceFromDocument(50L, 10L, List.of(reworded), false);
+
+            assertThat(found).isEqualTo(1);
+            assertThat(published.getStatus()).isEqualTo(AssignmentStatus.ACTIVE);
+            assertThat(draft.getStatus()).isEqualTo(AssignmentStatus.DRAFT);
+            verify(tasks, never()).deleteByAssignmentIdIn(anyList());
+            verify(assignments, never()).deleteAllByIdInBatch(any());
+            verify(audit, never()).record(any(), eq(AuditService.ASSIGNMENT_CLOSED), anyString());
+            verify(assignments).saveAll(argThat((List<Assignment> saved) -> saved.size() == 1
+                    && saved.get(0).getTitle().equals(reworded.title()) && saved.get(0).getId() == null));
+        }
     }
 
     /** b) The document an assignment came from is deleted (also a teacher's documents when the teacher is deleted). */
@@ -217,7 +242,8 @@ class AssignmentLifecycleTest {
             AssignmentService assignmentService = mock(AssignmentService.class);
             AdminService admin = new AdminService(users, documents, mock(CourseRepository.class), tasks,
                     mock(TaskSubmissionRepository.class), assignments, mock(EnrollmentRepository.class),
-                    mock(AuditLogRepository.class), audit, mock(StorageService.class), assignmentService);
+                    mock(AuditLogRepository.class), audit, mock(StorageService.class), assignmentService,
+                    mock(NotificationService.class));
             when(users.findById(2L)).thenReturn(Optional.of(teacher));
             when(documents.findIdsByOwnerId(2L)).thenReturn(List.of(50L, 51L));
 
@@ -238,7 +264,7 @@ class AssignmentLifecycleTest {
         void courseOfAssignment() {
             when(assignments.findCourseIdById(1L)).thenReturn(Optional.of(10L));
             when(assignments.findViewById(1L)).thenReturn(Optional.of(new AssignmentResponse(1L, "Lab 1", null, null,
-                    AssignmentStatus.CLOSED, 10L, "Algorithms", null, null, null, null, null, null, null)));
+                    AssignmentStatus.CLOSED, 10L, "Algorithms", null, null, null, null, null, null, null, false, true, null)));
         }
 
         @Test
@@ -302,7 +328,7 @@ class AssignmentLifecycleTest {
         private final CourseRepository courses = mock(CourseRepository.class);
         private final AssignmentService assignmentService = mock(AssignmentService.class);
         private final CourseService courseService = new CourseService(courses, enrollments, tasks,
-                mock(UserRepository.class), assignmentService, access, audit, new JoinAttemptLimiter());
+                mock(UserRepository.class), assignmentService, access, audit, new JoinAttemptLimiter(), mock(CoursePrivacyRemask.class));
 
         @Test
         void unenrollKeepsTasksAndSubmissions() {
@@ -319,12 +345,13 @@ class AssignmentLifecycleTest {
         @Test
         void studentWhoLeftCannotWorkOnTheKeptTask() {
             UserRepository users = mock(UserRepository.class);
-            TaskService taskService = new TaskService(tasks, users, enrollments);
+            TaskService taskService = new TaskService(tasks, new AccessControlService(users, courses,
+                    mock(DocumentRepository.class), enrollments, mock(AuditService.class)), Clock.systemUTC());
             when(users.findByEmail("student@uni.kz")).thenReturn(Optional.of(student));
             when(tasks.findAccessById(7L)).thenReturn(Optional.of(new TaskAccess(7L, 1L, 10L, 3L)));
             when(enrollments.existsByStudentIdAndCourseId(1L, 10L)).thenReturn(false);
 
-            assertThatThrownBy(() -> taskService.updateStatus(7L, TaskStatus.COMPLETED, "student@uni.kz"))
+            assertThatThrownBy(() -> taskService.updateStatus(7L, TaskStatus.IN_PROGRESS, "student@uni.kz"))
                     .isInstanceOfSatisfying(ApiException.class,
                             ex -> assertThat(ex.getCode()).isEqualTo(ErrorCodes.COURSE_NOT_ENROLLED));
             verify(tasks, never()).updateStatus(anyLong(), any());
@@ -339,12 +366,13 @@ class AssignmentLifecycleTest {
         StorageService storage = mock(StorageService.class);
         TaskSubmissionRepository submissions = mock(TaskSubmissionRepository.class);
         SubmissionService submissionService = new SubmissionService(submissions, tasks, assignments, courses, access,
-                storage, audit);
+                storage, audit, new TransactionTemplate(mock(PlatformTransactionManager.class)), Clock.systemUTC());
         when(access.currentUser("s@uni.kz")).thenReturn(student);
         when(tasks.findAccessById(7L)).thenReturn(Optional.of(new TaskAccess(7L, 1L, 10L, 3L)));
         when(courses.findById(10L)).thenReturn(Optional.of(course));
         when(access.isMember(student, course)).thenReturn(true);
-        when(assignments.findStatusById(3L)).thenReturn(Optional.of(AssignmentStatus.CLOSED));
+        when(tasks.findSubmitRulesById(7L)).thenReturn(Optional.of(
+                new SubmitRules(TaskStatus.PENDING, null, true, AssignmentStatus.CLOSED)));
 
         assertConflict(() -> submissionService.submit(7L,
                 List.of(new MockMultipartFile("files", "solution.pdf", "application/pdf", new byte[]{1})), "s@uni.kz"),

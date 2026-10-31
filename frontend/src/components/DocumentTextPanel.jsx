@@ -27,29 +27,31 @@ export default function DocumentTextPanel({ doc }) {
 
   const { data } = state
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+    <div className="overflow-hidden rounded-card border border-line bg-surface shadow-card">
       {state.loading ? (
-        <div className="flex h-48 items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-          <Loader2 className="h-4 w-4 animate-spin" /> Загрузка текста…
+        <div role="status" className="flex h-48 items-center justify-center gap-2 text-sm text-fg-muted">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" /> Загрузка текста…
         </div>
       ) : state.error ? (
         <ErrorState title="Не удалось загрузить текст" message={state.error} onRetry={retry} />
       ) : !data.text ? (
-        <p className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
+        <p className="px-4 py-10 text-center text-sm text-fg-muted">
           Текст документа не распознан: это может быть скан без текстового слоя или защищённый файл.
         </p>
       ) : (
         <>
           {data.masked && data.piiCount > 0 && (
-            <p className="flex items-center gap-2 border-b border-amber-100 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 px-4 py-2.5 text-sm text-amber-900 dark:text-amber-200">
+            <p className="flex items-center gap-2 border-b border-line-subtle bg-warning-soft px-4 py-2.5 text-sm text-warning-fg">
               <EyeOff className="h-4 w-4 shrink-0" aria-hidden="true" /> Часть личных данных скрыта.
             </p>
           )}
-          <div className="max-h-[70vh] overflow-y-auto whitespace-pre-wrap break-words px-4 py-3 text-sm leading-relaxed text-slate-800 dark:text-slate-200">
-            {highlightPlaceholders(data.text)}
+          <div className="max-h-[70vh] overflow-y-auto px-4 py-5 sm:px-6">
+            <div className="mx-auto max-w-reading whitespace-pre-wrap break-words text-body text-fg">
+              {highlightPlaceholders(data.text)}
+            </div>
           </div>
           {data.truncated && (
-            <p className="border-t border-slate-100 dark:border-slate-800 px-4 py-2 text-xs text-slate-500 dark:text-slate-400">
+            <p className="border-t border-line-subtle px-4 py-2 text-small text-fg-muted">
               Показаны первые 100 000 символов: остальная часть файла не прочитана.
             </p>
           )}
@@ -62,7 +64,7 @@ export default function DocumentTextPanel({ doc }) {
 // split() with a capturing group keeps the placeholders at the odd indexes.
 function highlightPlaceholders(text) {
   return text.split(PII_PLACEHOLDER).map((part, index) => (index % 2 === 1 ? (
-    <mark key={index} className="rounded bg-violet-100 dark:bg-violet-500/20 px-1 font-medium text-violet-800 dark:text-violet-200">
+    <mark key={index} className="rounded bg-primary-soft px-1 font-medium text-primary-fg">
       {part}
     </mark>
   ) : <Fragment key={index}>{part}</Fragment>))

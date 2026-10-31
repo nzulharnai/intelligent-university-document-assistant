@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, BadgeCheck, BookOpen, CircleAlert, FileUp, Files, FolderLock, GraduationCap, Hourglass, Loader2, LockKeyhole, Mail, Plus, ShieldCheck, User } from 'lucide-react'
+import { ArrowRight, BadgeCheck, BookOpen, CircleAlert, FileUp, Files, FolderLock, GraduationCap, Hourglass, LockKeyhole, Mail, Plus, ShieldCheck, User } from 'lucide-react'
 import api, { describeError } from '../api/axios'
 import ErrorState from '../components/ErrorState'
+import Badge from '../components/ui/Badge'
+import EmptyState from '../components/ui/EmptyState'
+import Skeleton from '../components/ui/Skeleton'
+import { linkClass } from '../components/ui/styles'
 import { useAuth } from '../context/AuthContext'
 import { ROLES, ROLE_ADMIN, ROLE_STUDENT, roleLabel } from '../constants/roles'
 import Navbar from '../components/Navbar'
@@ -51,20 +55,15 @@ export default function Dashboard() {
     .join('')
 
   return (
-    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950">
+    <div className="min-h-screen bg-page">
       <Navbar />
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-        <section className="relative overflow-hidden rounded-2xl border border-indigo-100 dark:border-indigo-500/30 bg-white dark:bg-slate-900 shadow-sm">
-          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-500 via-violet-500 to-cyan-400" />
-          <div className="grid grid-cols-1 gap-6 px-6 py-7 sm:px-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <section className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <div>
-              <span className="inline-flex items-center gap-2 rounded-full bg-indigo-50 dark:bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Защищённая рабочая среда
-              </span>
-              <h1 className="mt-4 text-2xl font-bold text-slate-900 dark:text-white sm:text-3xl">Добро пожаловать в UniDocs Assistant</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300 sm:text-base">
+              <Badge tone="primary" size="md" icon={ShieldCheck}>Защищённая рабочая среда</Badge>
+              <h1 className="mt-3 text-[1.5rem] leading-8 font-semibold text-fg sm:text-title">Добро пожаловать в UniDocs Assistant</h1>
+              <p className="mt-2 max-w-2xl text-body text-fg-secondary">
                 {isStudent
                   ? 'Материалы ваших курсов, дедлайны и ИИ-ассистент, который отвечает только по документам курсов, на которые вы записаны.'
                   : isAdmin
@@ -72,48 +71,47 @@ export default function Dashboard() {
                     : 'Ваши курсы, их документы, студенты и задания. ИИ находит дедлайны в силлабусах и выдаёт их студентам курса.'}
               </p>
             </div>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 p-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-sm font-bold text-white shadow-md shadow-indigo-200">
+            <div className="flex items-center gap-3 rounded-card border border-line bg-surface p-3 pr-4 shadow-soft">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-sm font-bold text-on-primary">
                 {initials}
               </span>
               <div className="min-w-0">
-                <p className="max-w-44 truncate text-sm font-semibold text-slate-900 dark:text-white">{user.fullName || user.email}</p>
-                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-300">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                <p className="max-w-44 truncate text-sm font-semibold text-fg">{user.fullName || user.email}</p>
+                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-success-fg">
+                  <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" />
                   Профиль активен
                 </p>
               </div>
             </div>
-          </div>
         </section>
         {isStudent && user.teacherRequested && (
-          <p className="mt-4 flex items-center gap-2 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200" role="status">
-            <Hourglass className="h-4 w-4 shrink-0" />
+          <p className="mt-6 flex items-center gap-2 rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-fg" role="status">
+            <Hourglass className="h-4 w-4 shrink-0" aria-hidden="true" />
             Заявка на роль преподавателя на рассмотрении. После подтверждения деканатом войдите в систему заново.
           </p>
         )}
 
-        <section className="mt-6 grid gap-4 md:grid-cols-3">
-          <StatusCard icon={Files} iconClass="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" label="Всего файлов" value={documentCount === null ? '…' : documentCount ?? '—'} description={access.files} />
-          <StatusCard icon={LockKeyhole} iconClass="bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" label="Доступ" value={access.access} description={access.hint} />
-          <StatusCard icon={RoleIcon} iconClass="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400" label="Текущие права доступа" value={roleLabel(user.role)} description="Доступ определяется вашей ролью" />
+        <section className="mt-8 grid gap-4 md:grid-cols-3">
+          <StatusCard icon={Files} iconClass="bg-primary-soft text-primary" label="Всего файлов" value={documentCount === null ? '…' : documentCount ?? '—'} description={access.files} />
+          <StatusCard icon={LockKeyhole} iconClass="bg-success-soft text-success" label="Доступ" value={access.access} description={access.hint} />
+          <StatusCard icon={RoleIcon} iconClass="bg-accent-soft text-accent-fg" label="Текущие права доступа" value={roleLabel(user.role)} description="Доступ определяется вашей ролью" />
         </section>
 
-        <h2 className="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Быстрые действия</h2>
+        <h2 className="mt-10 text-small font-semibold uppercase tracking-wide text-fg-muted">Быстрые действия</h2>
         <section className="mt-3 grid gap-4 sm:grid-cols-3">
-          <QuickAction to="/courses" icon={GraduationCap} title={isAdmin ? 'Все курсы' : 'Мои курсы'} description="Документы, задания и чат с ИИ" accent="violet" />
+          <QuickAction to="/courses" icon={GraduationCap} title={isAdmin ? 'Все курсы' : 'Мои курсы'} description="Документы, задания и чат с ИИ" />
           <QuickAction to="/documents" icon={FolderLock} title="Хранилище" description={access.files} />
           {isStudent ? (
-            <QuickAction to="/courses" icon={Plus} title="Записаться на курс" description="По ссылке-приглашению от преподавателя" accent="indigo" />
+            <QuickAction to="/courses" icon={Plus} title="Записаться на курс" description="По ссылке-приглашению от преподавателя" />
           ) : isAdmin ? (
-            <QuickAction to="/admin" icon={ShieldCheck} title="Панель деканата" description="Пользователи, роли, курсы, журнал" accent="indigo" />
+            <QuickAction to="/admin" icon={ShieldCheck} title="Панель деканата" description="Пользователи, роли, курсы, журнал" />
           ) : (
-            <QuickAction to="/documents" icon={FileUp} title="Загрузить документ" description="В один из ваших курсов" accent="indigo" />
+            <QuickAction to="/documents" icon={FileUp} title="Загрузить документ" description="В один из ваших курсов" />
           )}
         </section>
 
         {isStudent ? (
-          <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="space-y-6">
               <UpcomingDeadlines refreshKey={deadlinesVersion} statusOverrides={taskStatuses} />
               <MyTasks onStatusChanged={onTaskStatusChanged} />
@@ -131,7 +129,7 @@ export default function Dashboard() {
             </div>
           </div>
         ) : !isAdmin && (
-          <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <MyCourses title="Мои курсы" empty="Вы пока не ведёте курсов. Создайте курс на странице «Курсы»." />
             <AiChat
               endpoint="/ai/ask"
@@ -144,13 +142,13 @@ export default function Dashboard() {
           </div>
         )}
 
-        <section id="profile" className="mt-8 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-          <div className="h-24 bg-gradient-to-r from-indigo-600 via-violet-600 to-cyan-500" />
-          <div className="px-6 pb-6">
-            <div className="-mt-10 flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-white dark:border-slate-900 bg-indigo-100 dark:bg-indigo-500/20 text-2xl font-bold text-indigo-700 dark:text-indigo-300 shadow">
+        <section id="profile" className="mt-10 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          <div className="h-20 bg-gradient-to-r from-primary-soft via-accent-soft to-page-alt" aria-hidden="true" />
+          <div className="px-5 pb-6 sm:px-6">
+            <div className="-mt-10 flex h-20 w-20 items-center justify-center rounded-full border-4 border-surface bg-primary text-2xl font-bold text-on-primary shadow-soft">
               {initials}
             </div>
-            <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">{user.fullName}</h2>
+            <h2 className="mt-3 text-section text-fg">{user.fullName}</h2>
 
             <dl className="mt-5 grid gap-4 sm:grid-cols-3">
               <InfoItem icon={Mail} label="Email" value={user.email} />
@@ -190,12 +188,12 @@ function MyCourses({ title, empty }) {
   }, [attempt])
 
   return (
-    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
+    <section className="rounded-card border border-line bg-surface p-5 shadow-card sm:p-6">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-white">
-          <BookOpen className="h-5 w-5 text-violet-600 dark:text-violet-400" /> {title}
+        <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+          <BookOpen className="h-5 w-5 text-primary" aria-hidden="true" /> {title}
         </h2>
-        <Link to="/courses" className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Все курсы</Link>
+        <Link to="/courses" className={`${linkClass} text-small`}>Все курсы</Link>
       </div>
       {error ? (
         <ErrorState
@@ -208,17 +206,20 @@ function MyCourses({ title, empty }) {
           }}
         />
       ) : courses === null ? (
-        <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Загрузка…</div>
+        <div role="status" className="mt-4 space-y-2">
+          <span className="sr-only">Загрузка…</span>
+          {[0, 1, 2].map((index) => <Skeleton key={index} className="h-11 w-full" rounded="rounded-control" />)}
+        </div>
       ) : courses.content.length === 0 ? (
-        <p className="mt-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">{empty}</p>
+        <EmptyState compact icon={GraduationCap} title={empty} className="mt-4" />
       ) : (
         <ul className="mt-4 space-y-2">
           {courses.content.map((course) => (
             <li key={course.id}>
-              <Link to={`/courses/${course.id}`} className="group flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 px-3 py-2.5 transition hover:border-indigo-200 dark:hover:border-indigo-500/30 hover:bg-indigo-50/40 dark:hover:bg-indigo-500/10">
-                {course.code && <span className="rounded-md bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">{course.code}</span>}
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900 dark:text-white">{course.title}</span>
-                <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-hover:translate-x-1 group-hover:text-indigo-600" />
+              <Link to={`/courses/${course.id}`} className="group flex items-center gap-3 rounded-control border border-line px-3 py-2.5 transition-colors hover:border-primary/40 hover:bg-page focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring">
+                {course.code && <span className="rounded-md bg-primary-soft px-1.5 py-0.5 text-xs font-bold tabular-nums text-primary-fg">{course.code}</span>}
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{course.title}</span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-fg-muted transition-transform group-hover:translate-x-1 group-hover:text-primary" aria-hidden="true" />
               </Link>
             </li>
           ))}
@@ -230,13 +231,13 @@ function MyCourses({ title, empty }) {
 
 function InfoItem({ icon: Icon, label, value }) {
   return (
-    <div className="flex items-start gap-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 p-4">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm">
-        <Icon className="h-4.5 w-4.5" />
+    <div className="flex items-start gap-3 rounded-control bg-page p-4">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-surface text-primary shadow-soft">
+        <Icon className="h-4.5 w-4.5" aria-hidden="true" />
       </span>
       <div className="min-w-0">
-        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</dt>
-        <dd className="mt-0.5 truncate text-sm font-medium text-slate-900 dark:text-white">{value}</dd>
+        <dt className="text-xs font-medium uppercase tracking-wide text-fg-muted">{label}</dt>
+        <dd className="mt-0.5 truncate text-sm font-medium text-fg">{value}</dd>
       </div>
     </div>
   )
@@ -244,32 +245,31 @@ function InfoItem({ icon: Icon, label, value }) {
 
 function StatusCard({ icon: Icon, iconClass, label, value, description }) {
   return (
-    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-200 dark:hover:border-indigo-500/30 hover:shadow-md">
-      <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconClass}`}>
-        <Icon className="h-5 w-5" />
+    <div className="rounded-card border border-line bg-surface p-5 shadow-soft">
+      <span className={`flex h-10 w-10 items-center justify-center rounded-control ${iconClass}`}>
+        <Icon className="h-5 w-5" aria-hidden="true" />
       </span>
-      <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="mt-1 text-base font-bold text-slate-900 dark:text-white">{value}</p>
-      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</p>
+      <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-fg-muted">{label}</p>
+      <p className="mt-1 text-lg font-semibold tabular-nums text-fg">{value}</p>
+      <p className="mt-1 text-small text-fg-muted">{description}</p>
     </div>
   )
 }
 
-function QuickAction({ to, icon: Icon, title, description, accent = 'slate' }) {
-  const accentClasses = accent === 'indigo'
-    ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
-    : accent === 'violet'
-      ? 'bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 group-hover:bg-violet-600 group-hover:text-white'
-      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 group-hover:bg-slate-800 group-hover:text-white'
-
+function QuickAction({ to, icon: Icon, title, description }) {
   return (
-    <Link to={to} className="group rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-200 dark:hover:border-indigo-500/30 hover:shadow-md">
-      <span className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${accentClasses}`}>
-        <Icon className="h-4.5 w-4.5" />
+    <Link
+      to={to}
+      className="group flex items-start gap-3 rounded-card border border-line bg-surface p-4 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-card focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring motion-reduce:hover:translate-y-0"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-primary-soft text-primary transition-colors group-hover:bg-primary group-hover:text-on-primary">
+        <Icon className="h-4.5 w-4.5" aria-hidden="true" />
       </span>
-      <p className="mt-4 text-sm font-semibold text-slate-900 dark:text-white">{title}</p>
-      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{description}</p>
-      <ArrowRight className="mt-3 h-4 w-4 text-slate-400 dark:text-slate-500 transition-transform duration-200 group-hover:translate-x-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400" />
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-fg">{title}</span>
+        <span className="mt-0.5 block text-small text-fg-muted">{description}</span>
+      </span>
+      <ArrowRight className="mt-2 h-4 w-4 shrink-0 text-fg-muted transition-transform duration-200 group-hover:translate-x-1 group-hover:text-primary" aria-hidden="true" />
     </Link>
   )
 }

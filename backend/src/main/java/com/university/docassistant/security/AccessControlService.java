@@ -4,6 +4,7 @@ import com.university.docassistant.entity.AiStatus;
 import com.university.docassistant.entity.Course;
 import com.university.docassistant.entity.Document;
 import com.university.docassistant.entity.DocumentVisibility;
+import com.university.docassistant.entity.OcrStatus;
 import com.university.docassistant.entity.Role;
 import com.university.docassistant.entity.User;
 import com.university.docassistant.exception.ApiException;
@@ -11,6 +12,7 @@ import com.university.docassistant.exception.ErrorCodes;
 import com.university.docassistant.repository.CourseRepository;
 import com.university.docassistant.repository.DocumentRepository;
 import com.university.docassistant.repository.EnrollmentRepository;
+import com.university.docassistant.repository.TaskRepository.TaskAccess;
 import com.university.docassistant.repository.UserRepository;
 import com.university.docassistant.service.AuditService;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +40,7 @@ public class AccessControlService {
     /**
      * What a user may reach. {@code allCourses} (ADMIN) lifts the course filter; otherwise only documents of
      * {@code courseIds} are reachable, and {@code includeTeacherOnly} says whether their TEACHER_ONLY documents - and
-     * those the AI is still classifying - are too. {@code courseIds} is empty when the user has no course.
+     * those hidden from students by {@link #isHiddenFromStudents} - are too. {@code courseIds} is empty when the user has no course.
      */
     public record Scope(boolean allCourses, List<Long> courseIds, boolean includeTeacherOnly) {
 
@@ -84,7 +86,7 @@ public class AccessControlService {
      * The document if the user has {@code permission} on it; 404 when it does not exist, 403 otherwise.
      * Steps: (1) the user exists - done by {@link #currentUser}; (2) the role; (3) the document; (4) its course;
      * (5) the user's relation to that course; (6) the permission; (7) the document's visibility - for a student also
-     * that the AI is not still classifying it; (8) allow.
+     * that it is not hidden by {@link #isHiddenFromStudents}; (8) allow.
      */
     public Document authorizeDocument(User user, Long documentId, Permission permission) {
         if (user.getRole() == null) {                                                    // 2
@@ -96,6 +98,26 @@ public class AccessControlService {
             throw deny(user, permission + " on document " + documentId, ErrorCodes.ACCESS_DENIED, "Access denied");
         }
         return document;                                                                 // 8
+    }
+
+    /**
+     * A task is worked on only by its own user (403 TASK_NOT_OWN), and a task of a course only while that user is
+     * still enrolled in it (403 COURSE_NOT_ENROLLED): a student who left keeps the task for the teacher, but cannot
+     * work on it until they re-enroll. Ownership is the rule here rather than a role permission, since legacy tasks
+     * without a course may belong to any role.
+     */
+    public void authorizeOwnTask(User user, TaskAccess task) {
+        if (!task.userId().equals(user.getId())) {
+            throw deny(user, "CHANGE task " + task.id(), ErrorCodes.TASK_NOT_OWN, "You can change only your own tasks");
+        }
+        if (task.courseId() != null && !enrollmentRepository.existsByStudentIdAndCourseId(user.getId(), task.courseId())) {
+            throw deny(user, "CHANGE task " + task.id(), ErrorCodes.COURSE_NOT_ENROLLED, "You are not enrolled in this course");
+        }
+    }
+
+    /** Same decision as {@link #authorizeCourse}, without throwing, for a course already loaded with its teacher. */
+    public boolean can(User user, Course course, Permission permission) {
+        return Permission.granted(user.getRole(), permission) && isMember(user, course);
     }
 
     /** Same decision as {@link #authorizeDocument}, without throwing; for "what may I do" flags in responses. */
@@ -111,20 +133,28 @@ public class AccessControlService {
             return false;
         }
         return user.getRole() != Role.ROLE_STUDENT                                       // 7
-                || (document.getVisibility() != DocumentVisibility.TEACHER_ONLY && !isBeingClassified(document));
-    }
-
-    /** Rule C: until the AI has classified it, a document may still turn out to be EXAM_ANSWERS. */
-    private static boolean isBeingClassified(Document document) {
-        return document.getAiStatus() == AiStatus.PENDING || document.getAiStatus() == AiStatus.PROCESSING;
+                || (document.getVisibility() != DocumentVisibility.TEACHER_ONLY
+                    && !isHiddenFromStudents(document.getAiStatus(), document.getOcrStatus()));
     }
 
     /**
-     * The view rule of {@link #can} for rows that carry only their course, visibility and AI status, checked against a
-     * {@link #scope}: ADMIN sees everything; others only documents of their courses, and a student (no
-     * includeTeacherOnly) neither TEACHER_ONLY ones nor ones the AI is still classifying.
+     * Rule C: until the AI has classified it, a document may still turn out to be EXAM_ANSWERS - and so may one the AI
+     * could not classify (FAILED) or a scan whose text could not be recognized (OCR FAILED, "Нужна проверка"). A type
+     * the teacher set by hand (MANUAL) is a decision, so such a scan is visible again. The repository queries
+     * (DocumentRepository, DocumentChunkRepository) repeat this rule in SQL.
      */
-    public static boolean canView(Scope scope, Long courseId, DocumentVisibility visibility, AiStatus aiStatus) {
+    public static boolean isHiddenFromStudents(AiStatus aiStatus, OcrStatus ocrStatus) {
+        return aiStatus == AiStatus.PENDING || aiStatus == AiStatus.PROCESSING || aiStatus == AiStatus.FAILED
+                || (ocrStatus == OcrStatus.FAILED && aiStatus != AiStatus.MANUAL);
+    }
+
+    /**
+     * The view rule of {@link #can} for rows that carry only their course, visibility, AI and OCR status, checked
+     * against a {@link #scope}: ADMIN sees everything; others only documents of their courses, and a student (no
+     * includeTeacherOnly) neither TEACHER_ONLY ones nor ones {@link #isHiddenFromStudents}.
+     */
+    public static boolean canView(Scope scope, Long courseId, DocumentVisibility visibility, AiStatus aiStatus,
+                                  OcrStatus ocrStatus) {
         if (scope.allCourses()) {
             return true;
         }
@@ -132,8 +162,7 @@ public class AccessControlService {
             return false;
         }
         return scope.includeTeacherOnly()
-                || (visibility != DocumentVisibility.TEACHER_ONLY
-                    && aiStatus != AiStatus.PENDING && aiStatus != AiStatus.PROCESSING);
+                || (visibility != DocumentVisibility.TEACHER_ONLY && !isHiddenFromStudents(aiStatus, ocrStatus));
     }
 
     /** Whether the user teaches the course (TEACHER) or is enrolled in it (STUDENT); ADMIN always. */

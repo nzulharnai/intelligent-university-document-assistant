@@ -4,6 +4,7 @@ import com.university.docassistant.dto.AdminDtos.AdminUserResponse;
 import com.university.docassistant.dto.AuthDtos.MessageResponse;
 import com.university.docassistant.dto.AuthDtos.RegisterRequest;
 import com.university.docassistant.entity.AuthProvider;
+import com.university.docassistant.entity.NotificationType;
 import com.university.docassistant.entity.Role;
 import com.university.docassistant.entity.User;
 import com.university.docassistant.exception.ApiException;
@@ -52,6 +53,7 @@ class TeacherRequestTest {
     private final TaskRepository tasks = mock(TaskRepository.class);
     private final EnrollmentRepository enrollments = mock(EnrollmentRepository.class);
     private final AuditService audit = mock(AuditService.class);
+    private final NotificationService notifications = mock(NotificationService.class);
 
     @Test
     void registeringAsTeacherCreatesAStudentWithAPendingRequest() {
@@ -103,6 +105,9 @@ class TeacherRequestTest {
         verify(enrollments).deleteByStudentId(7L);
         verify(audit).record(eq(ADMIN_EMAIL), eq(AuditService.ROLE_CHANGED), anyString());
         verify(audit).record(ADMIN_EMAIL, AuditService.TEACHER_REQUEST_APPROVED, "applicant@uni.kz");
+        // US-13: the applicant, and only they, hears the decision.
+        verify(notifications).notify(eq(List.of(7L)), eq(NotificationType.TEACHER_REQUEST_APPROVED), anyString(),
+                anyString(), eq("/courses"));
     }
 
     @Test
@@ -117,6 +122,8 @@ class TeacherRequestTest {
         verify(users).save(applicant);
         verify(enrollments, never()).deleteByStudentId(any());
         verify(audit).record(ADMIN_EMAIL, AuditService.TEACHER_REQUEST_REJECTED, "applicant@uni.kz");
+        verify(notifications).notify(eq(List.of(7L)), eq(NotificationType.TEACHER_REQUEST_REJECTED), anyString(),
+                anyString(), anyString());
     }
 
     @Test
@@ -173,6 +180,7 @@ class TeacherRequestTest {
     private AdminService adminService() {
         return new AdminService(users, mock(DocumentRepository.class), mock(CourseRepository.class), tasks,
                 mock(TaskSubmissionRepository.class), mock(AssignmentRepository.class), enrollments,
-                mock(AuditLogRepository.class), audit, mock(StorageService.class), mock(AssignmentService.class));
+                mock(AuditLogRepository.class), audit, mock(StorageService.class), mock(AssignmentService.class),
+                notifications);
     }
 }

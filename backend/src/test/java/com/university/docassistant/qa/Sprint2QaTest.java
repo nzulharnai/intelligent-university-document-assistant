@@ -75,6 +75,7 @@ import java.util.zip.ZipOutputStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -276,7 +277,7 @@ class Sprint2QaTest {
                     {"summary": "Сортировка слиянием", "topics": ["Merge sort"], "tasks": [
                       {"title": "Практическая работа 4", "description": "Сортировка слиянием",
                        "deadline": "2026-11-20T23:59:00"}]}"""));
-            when(assignments.replaceFromDocument(anyLong(), anyLong(), any()))
+            when(assignments.replaceFromDocument(anyLong(), anyLong(), any(), anyBoolean()))
                     .thenAnswer(invocation -> ((List<?>) invocation.getArgument(2)).size());
         }
 
@@ -298,8 +299,8 @@ class Sprint2QaTest {
 
             ArgumentCaptor<List<TaskExtractDto>> syllabusItems = listCaptor();
             ArgumentCaptor<List<TaskExtractDto>> practiceItems = listCaptor();
-            verify(assignments).replaceFromDocument(eq(SYLLABUS_ID), eq(COURSE_ID), syllabusItems.capture());
-            verify(assignments).replaceFromDocument(eq(PRACTICE_ID), eq(COURSE_ID), practiceItems.capture());
+            verify(assignments).replaceFromDocument(eq(SYLLABUS_ID), eq(COURSE_ID), syllabusItems.capture(), eq(true));
+            verify(assignments).replaceFromDocument(eq(PRACTICE_ID), eq(COURSE_ID), practiceItems.capture(), eq(true));
             assertThat(syllabusItems.getValue()).extracting(TaskExtractDto::title)
                     .containsExactly("Лабораторная 1", "Лабораторная 2", "Проект");
             assertThat(practiceItems.getValue()).singleElement().satisfies(item -> {
@@ -314,7 +315,7 @@ class Sprint2QaTest {
 
             verify(ai, times(2)).chatJson(anyString(), anyString());
             verify(ai, times(2)).chat(anyString(), anyString());
-            verify(assignments, times(2)).replaceFromDocument(anyLong(), anyLong(), any());
+            verify(assignments, times(2)).replaceFromDocument(anyLong(), anyLong(), any(), anyBoolean());
             assertThat(storedRows).hasSize(2);
             assertThat(status).containsEntry(SYLLABUS_ID, AiStatus.DONE).containsEntry(PRACTICE_ID, AiStatus.DONE);
         }

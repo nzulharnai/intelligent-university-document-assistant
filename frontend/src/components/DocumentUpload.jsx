@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Archive, Bot, CalendarClock, CheckCircle2, FileText, Loader2, Sparkles, UploadCloud, X, XCircle } from 'lucide-react'
+import { AlertTriangle, Archive, Bot, CalendarClock, CheckCircle2, FileText, Loader2, Sparkles, UploadCloud, X, XCircle } from 'lucide-react'
 import api, { getErrorMessage } from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -21,7 +21,7 @@ const AUTO = '' // category value: let the AI classify each file
 
 const DOCUMENT_ACCEPT = DOCUMENT_EXTENSIONS.map((ext) => `.${ext}`).join(',')
 
-const selectClass = 'w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-500/30 disabled:opacity-60'
+const selectClass = 'w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-sm text-fg outline-none transition focus:border-primary focus:ring-4 focus:ring-ring disabled:opacity-60'
 
 const extensionOf = (name) => name.split('.').pop().toLowerCase()
 const isZip = (file) => extensionOf(file.name) === 'zip'
@@ -192,7 +192,7 @@ export default function DocumentUpload({ course, onUploaded }) {
   const busy = Boolean(upload)
 
   return (
-    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm sm:p-5">
+    <section className="rounded-card border border-line bg-surface p-4 shadow-card sm:p-5">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 [&>*]:min-w-0">
         <Field label="Тип документа" htmlFor="upload-category">
           <select id="upload-category" value={category} onChange={(event) => setCategory(event.target.value)} className={selectClass} disabled={busy}>
@@ -223,7 +223,7 @@ export default function DocumentUpload({ course, onUploaded }) {
           )}
         </Field>
       </div>
-      <p className="mt-2 flex items-center gap-1.5 text-xs text-violet-700 dark:text-violet-300">
+      <p className="mt-2 flex items-center gap-1.5 text-xs text-primary-fg">
         <Sparkles className="h-3.5 w-3.5 shrink-0" />
         {category === AUTO
           ? 'ИИ определит тип каждого файла (силлабус, задание, лекция, ответы к экзамену, положение…) и извлечёт дедлайны из силлабусов и заданий. Файлы, распознанные как ответы к экзамену, увидит только преподаватель.'
@@ -255,12 +255,12 @@ export default function DocumentUpload({ course, onUploaded }) {
           setDragActive(false)
           uploadFiles(event.dataTransfer.files)
         }}
-        className={`mt-4 flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-7 text-center transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-500/30 ${
+        className={`mt-4 flex cursor-pointer flex-col items-center justify-center rounded-card border-2 border-dashed p-7 text-center transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-ring ${
           busy
-            ? 'cursor-wait border-indigo-300 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-500/10'
+            ? 'cursor-wait border-primary bg-primary-soft'
             : dragActive
-              ? 'cursor-copy border-indigo-500 bg-indigo-50/70 dark:bg-indigo-500/10'
-              : 'border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/30 dark:bg-indigo-500/5 hover:border-indigo-500 hover:bg-indigo-50/70 dark:hover:bg-indigo-500/10'
+              ? 'cursor-copy border-primary bg-primary-soft'
+              : 'border-line-strong bg-page hover:border-primary hover:bg-primary-soft'
         }`}
       >
         <input
@@ -276,16 +276,16 @@ export default function DocumentUpload({ course, onUploaded }) {
         />
         {upload ? <UploadProgress upload={upload} classifying={category === AUTO} /> : (
           <>
-            <div className="flex items-center gap-2 text-indigo-500">
+            <div className="flex items-center gap-2 text-primary-fg">
               <FileText className="h-6 w-6" />
-              <UploadCloud className={`h-10 w-10 ${dragActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-indigo-400'}`} />
+              <UploadCloud className={`h-10 w-10 ${dragActive ? 'text-primary-fg' : 'text-primary-fg'}`} />
               {canImportZip && <Archive className="h-6 w-6" />}
             </div>
-            <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">
+            <p className="mt-3 text-sm font-medium text-fg">
               Перетащите сюда несколько файлов{canImportZip ? ' или ZIP-архив' : ''}, или{' '}
-              <span className="text-indigo-600 dark:text-indigo-400 underline-offset-2 hover:underline">выберите файлы</span>
+              <span className="text-primary-fg underline-offset-2 hover:underline">выберите файлы</span>
             </p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-1 text-xs text-fg-muted">
               PDF, DOCX, PPTX, TXT, PNG, JPG — до {formatSize(MAX_FILE_SIZE)} на файл{canImportZip ? `; ZIP — до ${formatSize(MAX_ARCHIVE_SIZE)}` : ''}
             </p>
           </>
@@ -308,7 +308,7 @@ export default function DocumentUpload({ course, onUploaded }) {
             type="button"
             onClick={() => zipInputRef.current?.click()}
             disabled={busy}
-            className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60"
+            className="flex items-center gap-2 rounded-control border border-line-strong px-3 py-1.5 text-xs font-medium text-fg transition hover:bg-page-alt disabled:opacity-60"
           >
             <Archive className="h-4 w-4" /> Загрузить ZIP-архив
           </button>
@@ -333,47 +333,64 @@ function UploadProgress({ upload, classifying }) {
   return (
     <div className="w-full max-w-sm">
       {processing && classifying
-        ? <Bot className="mx-auto h-8 w-8 animate-pulse text-violet-600 dark:text-violet-400" />
-        : <Loader2 className="mx-auto h-8 w-8 animate-spin text-indigo-600 dark:text-indigo-400" />}
-      <p className="mt-3 truncate text-sm font-medium text-slate-700 dark:text-slate-200">
+        ? <Bot className="mx-auto h-8 w-8 animate-pulse text-primary" aria-hidden="true" />
+        : <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" aria-hidden="true" />}
+      <p className="mt-3 truncate text-sm font-medium text-fg">
         {processing
           ? (classifying ? `ИИ определяет тип ${upload.label}…` : `Распознавание текста ${upload.label}…`)
           : `Загрузка ${upload.label}…`}
       </p>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-page-alt">
         <div
-          className={`h-full rounded-full transition-all duration-200 ${processing ? 'animate-pulse bg-violet-500' : 'bg-indigo-600'}`}
+          className={`h-full rounded-full transition-all duration-200 ${processing ? 'animate-pulse bg-primary' : 'bg-primary'}`}
           style={{ width: `${upload.progress}%` }}
         />
       </div>
-      <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mt-1 flex items-center justify-center gap-1.5 text-xs tabular-nums text-fg-muted">
         {processing ? <><Loader2 className="h-3 w-3 animate-spin" /> Обработка на сервере</> : `${upload.progress}%`}
       </p>
     </div>
   )
 }
 
+/**
+ * Why students do not see an uploaded file (AccessControlService.isHiddenFromStudents): the AI was not configured at
+ * upload, it could not type the file, or the scan's text was not recognized. Null when they see it (or it is
+ * TEACHER_ONLY anyway) or the background work has not finished.
+ */
+function hiddenReason(document, view) {
+  if (document.visibility === 'TEACHER_ONLY' || view.aiStatus === 'MANUAL') return null
+  if (document.aiStatus === 'FAILED') return 'ИИ недоступен — укажите тип, чтобы студенты увидели файл'
+  if (view.phase === 'classifying') return null
+  if (view.aiStatus === 'FAILED') return 'ИИ не определил тип — укажите тип, чтобы студенты увидели файл'
+  if (view.ocrStatus === 'FAILED') return 'Скан не распознан — укажите тип, чтобы студенты увидели файл'
+  return null
+}
+
 function UploadResult({ result, viewOf, deadlineNotices, assignmentsLink, onClose }) {
+  const hidden = result.uploaded
+    .map(({ document }) => ({ document, reason: hiddenReason(document, viewOf(document)) }))
+    .filter(({ reason }) => reason)
   return (
-    <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-3">
+    <div className="mt-4 rounded-xl border border-line bg-page-alt p-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+        <p className="text-xs font-semibold text-fg">
           Загружено: {result.uploaded.length}{result.skipped.length > 0 && ` · пропущено: ${result.skipped.length}`}
         </p>
-        <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" aria-label="Скрыть результат">
+        <button type="button" onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary" aria-label="Скрыть результат">
           <X className="h-4 w-4" />
         </button>
       </div>
       {result.archives.map((archive) => (
-        <p key={archive.name} className="mt-1 flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
-          <Archive className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+        <p key={archive.name} className="mt-1 flex items-center gap-1.5 text-xs text-fg-secondary">
+          <Archive className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
           Импортировано {archive.imported} из {archive.total} файлов — «{archive.name}»
         </p>
       ))}
       {deadlineNotices.length > 0 && (
         <ul className="mt-2 space-y-1" aria-live="polite">
           {deadlineNotices.map(({ document, view }) => (
-            <li key={document.id} className="flex flex-wrap items-center gap-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-800 dark:text-emerald-300">
+            <li key={document.id} className="flex flex-wrap items-center gap-1.5 rounded-control bg-success-soft px-2 py-1.5 text-xs text-success-fg">
               <CalendarClock className="h-3.5 w-3.5 shrink-0" />
               {view.draftsCount > 0 ? (
                 <>
@@ -392,19 +409,30 @@ function UploadResult({ result, viewOf, deadlineNotices, assignmentsLink, onClos
           ))}
         </ul>
       )}
+      {hidden.length > 0 && (
+        <ul className="mt-2 space-y-1" aria-live="polite">
+          {hidden.map(({ document, reason }) => (
+            <li key={document.id} className="flex flex-wrap items-center gap-1.5 rounded-control bg-warning-soft px-2 py-1.5 text-xs text-warning-fg">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0">{reason} («{document.originalFileName}»)</span>
+              <Link to={`/documents/${document.id}`} className="font-semibold underline-offset-2 hover:underline">Указать тип</Link>
+            </li>
+          ))}
+        </ul>
+      )}
       <ul className="mt-2 max-h-56 space-y-1 overflow-y-auto" aria-live="polite">
         {result.uploaded.map(({ document }) => (
           <li key={document.id} className="flex items-center gap-2 text-xs">
-            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-            <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200" title={document.originalFileName}>{document.originalFileName}</span>
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+            <span className="min-w-0 flex-1 truncate text-fg" title={document.originalFileName}>{document.originalFileName}</span>
             <DocumentStatus view={viewOf(document)} />
           </li>
         ))}
         {result.skipped.map((item, index) => (
           <li key={`skipped-${index}`} className="flex items-start gap-2 text-xs">
-            <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
-            <span className="min-w-0 flex-1 truncate text-slate-500 dark:text-slate-400" title={item.fileName}>{item.fileName}</span>
-            <span className="shrink-0 text-red-600 dark:text-red-400">{item.reason}</span>
+            <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+            <span className="min-w-0 flex-1 truncate text-fg-muted" title={item.fileName}>{item.fileName}</span>
+            <span className="shrink-0 text-danger-fg">{item.reason}</span>
           </li>
         ))}
       </ul>
@@ -419,28 +447,28 @@ function DocumentStatus({ view }) {
   const muted = 'inline-flex shrink-0 items-center gap-1 text-[11px] font-medium'
   if (view.timedOut && !FINAL_STATUSES.has(view.aiStatus)) {
     // Polling gave up after 3 minutes; the server keeps working and the list shows the result later.
-    return <span className={`${muted} text-slate-500 dark:text-slate-400`}>Обработка продолжается в фоне</span>
+    return <span className={`${muted} text-fg-muted`}>Обработка продолжается в фоне</span>
   }
   if (view.phase === 'classifying') {
     if (view.ocrStatus === 'PENDING' || view.ocrStatus === 'RUNNING') {
       return (
-        <span className={`${muted} text-sky-700 dark:text-sky-300`}>
+        <span className={`${muted} text-accent-fg`}>
           <Loader2 className="h-3 w-3 animate-spin" /> Распознаём скан…
         </span>
       )
     }
     if (view.aiStatus === 'PROCESSING') {
       return (
-        <span className={`${muted} text-violet-700 dark:text-violet-300`}>
+        <span className={`${muted} text-primary-fg`}>
           <Loader2 className="h-3 w-3 animate-spin" /> ИИ определяет тип…
         </span>
       )
     }
-    return <span className={`${muted} text-slate-500 dark:text-slate-400`}>Загружено</span>
+    return <span className={`${muted} text-fg-muted`}>Загружено</span>
   }
   if (view.aiStatus === 'FAILED') {
     return (
-      <span className={`${muted} rounded-md bg-amber-50 px-1.5 py-0.5 text-amber-800 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30`}>
+      <span className={`${muted} rounded-md bg-warning-soft px-1.5 py-0.5 text-warning-fg ring-1 ring-inset ring-warning/30`}>
         Тип не определён
       </span>
     )
@@ -448,7 +476,7 @@ function DocumentStatus({ view }) {
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5">
       {view.phase === 'deadlines' && (
-        <span className={`${muted} text-slate-500 dark:text-slate-400`} title="ИИ ищет задания и дедлайны">
+        <span className={`${muted} text-fg-muted`} title="ИИ ищет задания и дедлайны">
           <Loader2 className="h-3 w-3 animate-spin" /> дедлайны…
         </span>
       )}
@@ -468,7 +496,7 @@ function AssignmentsLink({ to, label = 'К заданиям курса' }) {
 function Field({ label, htmlFor, children }) {
   return (
     <div>
-      <label htmlFor={htmlFor} className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{label}</label>
+      <label htmlFor={htmlFor} className="mb-1 block text-xs font-medium text-fg-secondary">{label}</label>
       {children}
     </div>
   )
