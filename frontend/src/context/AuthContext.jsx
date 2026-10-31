@@ -110,6 +110,13 @@ export function AuthProvider({ children }) {
     clearSession()
   }, [clearSession])
 
+  // "Профиль": name and phone; the response is the updated profile.
+  const updateProfile = useCallback(async ({ fullName, phone }) => {
+    const { data } = await api.patch('/users/me', { fullName, phone })
+    setUser(withNormalizedRole(data))
+    return data
+  }, [])
+
   const value = useMemo(() => ({
     user,
     token,
@@ -126,7 +133,8 @@ export function AuthProvider({ children }) {
     verifyOtp,
     resetPassword,
     logout,
-  }), [user, token, loading, login, register, verifyEmail, resendVerification, loginWithToken, forgotPassword, verifyOtp, resetPassword, logout])
+    updateProfile,
+  }), [user, token, loading, login, register, verifyEmail, resendVerification, loginWithToken, forgotPassword, verifyOtp, resetPassword, logout, updateProfile])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

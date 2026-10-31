@@ -21,6 +21,8 @@ public enum Permission {
     ASK_AI,
     /** Hand in files for one's own task: the only kind of upload a STUDENT may make. */
     SUBMIT_TASK,
+    /** Grade students' work and give feedback: the course's teacher or ADMIN (US-11). */
+    GRADE_WORK,
     MANAGE_SYSTEM;
 
     private static final Map<Role, Set<Permission>> BY_ROLE = Map.of(

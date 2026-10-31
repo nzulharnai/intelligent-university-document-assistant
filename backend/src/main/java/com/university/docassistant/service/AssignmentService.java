@@ -1,5 +1,6 @@
 package com.university.docassistant.service;
 
+import com.university.docassistant.config.PrivacyProperties;
 import com.university.docassistant.dto.AssignmentDtos.AssignmentResponse;
 import com.university.docassistant.dto.AssignmentDtos.CreateAssignmentRequest;
 import com.university.docassistant.dto.AssignmentDtos.PublishResponse;
@@ -20,7 +21,9 @@ import com.university.docassistant.security.AccessControlService;
 import com.university.docassistant.security.Permission;
 import com.university.docassistant.util.AssignmentTitles;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,13 +64,26 @@ public class AssignmentService {
     private final AccessControlService access;
     private final AuditService auditService;
     private final AssignmentEvents events;
+    private final DocumentPrivacyService privacyService;
     /** False (default): AI assignments start as DRAFT; true: ACTIVE at once, as before drafts existed. */
     private final boolean autoPublish;
 
+    /** For tests: masking with the default settings. */
     public AssignmentService(AssignmentRepository assignmentRepository, TaskRepository taskRepository,
                              CourseRepository courseRepository, DocumentRepository documentRepository,
                              AccessControlService access, AuditService auditService, AssignmentEvents events,
+                             boolean autoPublish) {
+        this(assignmentRepository, taskRepository, courseRepository, documentRepository, access, auditService, events,
+                new DocumentPrivacyService(new PrivacyProperties(null, null)), autoPublish);
+    }
+
+    @Autowired
+    public AssignmentService(AssignmentRepository assignmentRepository, TaskRepository taskRepository,
+                             CourseRepository courseRepository, DocumentRepository documentRepository,
+                             AccessControlService access, AuditService auditService, AssignmentEvents events,
+                             DocumentPrivacyService privacyService,
                              @Value("${app.ai.auto-publish-assignments:false}") boolean autoPublish) {
+        this.privacyService = privacyService;
         this.assignmentRepository = assignmentRepository;
         this.taskRepository = taskRepository;
         this.courseRepository = courseRepository;
@@ -87,8 +103,15 @@ public class AssignmentService {
 
     @Transactional(readOnly = true)
     public PageResponse<AssignmentResponse> list(Long courseId, String email, Pageable pageable) {
-        access.authorizeCourse(access.currentUser(email), courseId, Permission.VIEW_COURSE);
-        return PageResponse.of(assignmentRepository.findViewsByCourseId(courseId, pageable));
+        User user = access.currentUser(email);
+        Course course = access.authorizeCourse(user, courseId, Permission.VIEW_COURSE);
+        Page<AssignmentResponse> page = assignmentRepository.findViewsByCourseId(courseId, pageable);
+        if (access.can(user, course, Permission.MANAGE_COURSE)) {
+            return PageResponse.of(page);
+        }
+        // US-09: students see the source documents' names with personal data masked.
+        return PageResponse.of(page.map(row ->
+                row.withSourceDocumentName(privacyService.maskFileName(row.sourceDocumentName()))));
     }
 
     /** The course's AI drafts waiting for review; for its teacher or ADMIN. */
@@ -144,6 +167,7 @@ public class AssignmentService {
                 .course(course)
                 .build());
         int handedOut = handOut(courseId);
+        events.published(courseId, course.getTitle(), List.of(assignment.getTitle()));
         auditService.record(user.getEmail(), AuditService.ASSIGNMENT_CREATED,
                 "Assignment " + assignment.getId() + " \"" + assignment.getTitle() + "\" in course " + courseId);
         log.info("User {} created assignment {} in course {} ({} student task(s))",
@@ -196,6 +220,10 @@ public class AssignmentService {
         assignment.setRequirements(request.description() == null || request.description().isBlank()
                 ? null : request.description().strip());
         assignment.setDeadline(request.deadline());
+        if (request.allowLate() != null) {
+            assignment.setAllowLate(request.allowLate());
+        }
+        assignment.setMaxScore(request.maxScore());
         assignmentRepository.saveAndFlush(assignment);
         if (assignment.getStatus() != AssignmentStatus.DRAFT) {
             taskRepository.syncWithAssignments(courseId);
@@ -315,6 +343,15 @@ public class AssignmentService {
      */
     @Transactional
     public int replaceFromDocument(Long documentId, Long courseId, List<TaskExtractDto> found) {
+        return replaceFromDocument(documentId, courseId, found, true);
+    }
+
+    /**
+     * Like {@link #replaceFromDocument(Long, Long, List)}. {@code complete} false: {@code found} comes from only part
+     * of the document (an AI chunk failed), so the assignments it lacks are kept instead of removed or closed.
+     */
+    @Transactional
+    public int replaceFromDocument(Long documentId, Long courseId, List<TaskExtractDto> found, boolean complete) {
         Map<String, Assignment> existing = new HashMap<>();
         List<Long> staleDrafts = new ArrayList<>();
         for (Assignment assignment : assignmentRepository.findBySourceDocumentId(documentId)) {
@@ -342,8 +379,8 @@ public class AssignmentService {
         }
         List<Assignment> vanished = new ArrayList<>();
         for (Assignment assignment : existing.values()) {
-            if (assignment.getAiMatchKey() != null) {
-                continue; // Taken over by the teacher: stays, whatever the AI says now.
+            if (assignment.getAiMatchKey() != null || !complete) {
+                continue; // Taken over by the teacher, or maybe in a part the AI did not answer for: stays.
             }
             if (assignment.getStatus() == AssignmentStatus.DRAFT) {
                 staleDrafts.add(assignment.getId());
@@ -362,6 +399,11 @@ public class AssignmentService {
         assignmentRepository.flush();
         markDuplicates(courseId, created);
         handOut(courseId);
+        if (autoPublish && !created.isEmpty()) {
+            // Published at once, without a teacher's review: the students hear about them like any publication.
+            events.published(courseId, courseRepository.findById(courseId).map(Course::getTitle).orElse(""),
+                    created.stream().map(Assignment::getTitle).toList());
+        }
         return kept.size();
     }
 
@@ -421,6 +463,7 @@ public class AssignmentService {
         drafts.forEach(assignment -> assignment.setStatus(AssignmentStatus.ACTIVE));
         assignmentRepository.saveAllAndFlush(drafts);
         int tasksCreated = handOut(courseId);
+        events.published(courseId, drafts.get(0).getCourse().getTitle(), drafts.stream().map(Assignment::getTitle).toList());
         auditService.record(user.getEmail(), AuditService.ASSIGNMENT_PUBLISHED, drafts.size()
                 + " assignment(s) of course " + courseId + ": " + drafts.stream().map(Assignment::getId).toList()
                 + ", " + tasksCreated + " student task(s)");

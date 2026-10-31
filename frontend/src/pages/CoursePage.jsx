@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Check, ChevronRight, Copy, FileText, GraduationCap, Loader2, RefreshCw, ShieldAlert, Users } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, ChevronRight, Copy, FileText, FolderOpen, GraduationCap, RefreshCw, ShieldAlert, UserRound, Users, X } from 'lucide-react'
 import api, { describeError } from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -22,6 +22,10 @@ import { canDeleteDocument, getFileFormat } from '../utils/fileTypes'
 import { formatDateTime } from '../utils/dates'
 import useDocumentStatus from '../hooks/useDocumentStatus'
 import { isClassifying, withLiveStatus } from '../utils/documentStatus'
+import Badge from '../components/ui/Badge'
+import Button from '../components/ui/Button'
+import EmptyState from '../components/ui/EmptyState'
+import Skeleton, { SkeletonLines } from '../components/ui/Skeleton'
 
 const DOCS_PAGE_SIZE = 10
 
@@ -53,20 +57,22 @@ export default function CoursePage() {
   const notMember = error?.status === 403
 
   return (
-    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950">
+    <div className="min-h-screen bg-page">
       <Navbar />
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
-        <Link to="/courses" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
-          <ArrowLeft className="h-4 w-4" /> Все курсы
+        <Link to="/courses" className="inline-flex items-center gap-1.5 rounded-sm text-sm font-medium text-fg-muted hover:text-primary-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Все курсы
         </Link>
 
         {error ? (
           <div className="mx-auto mt-16 flex max-w-md flex-col items-center text-center">
-            <ShieldAlert className="h-10 w-10 text-slate-400" />
-            <h1 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-page-alt text-fg-muted">
+              <ShieldAlert className="h-6 w-6" aria-hidden="true" />
+            </span>
+            <h1 className="mt-3 text-lg font-semibold text-fg">
               {error.status === 404 ? 'Курс не найден' : notMember ? 'Нет доступа к курсу' : 'Не удалось открыть курс'}
             </h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            <p className="mt-1 text-sm text-fg-muted">
               {notMember
                 ? (isStudent
                   ? 'Материалы курса доступны только записанным студентам. Чтобы записаться, откройте ссылку-приглашение от преподавателя.'
@@ -74,54 +80,59 @@ export default function CoursePage() {
                 : error.message}
             </p>
             {error.status !== 403 && error.status !== 404 && (
-              <button
-                type="button"
-                onClick={retryDetails}
-                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
-              >
-                <RefreshCw className="h-4 w-4" /> Повторить
-              </button>
+              <Button icon={RefreshCw} onClick={retryDetails} className="mt-4">
+                Повторить
+              </Button>
             )}
           </div>
         ) : !details ? (
-          <div className="flex items-center justify-center gap-2 py-24 text-sm text-slate-500 dark:text-slate-400">
-            <Loader2 className="h-4 w-4 animate-spin" /> Загрузка курса…
+          <div role="status" className="mt-4 space-y-6">
+            <span className="sr-only">Загрузка курса…</span>
+            <div className="rounded-card border border-line bg-surface p-6 shadow-card">
+              <Skeleton className="h-5 w-20" />
+              <Skeleton className="mt-3 h-8 w-2/3" />
+              <SkeletonLines lines={2} className="mt-4" />
+            </div>
+            <Skeleton className="h-64 w-full" rounded="rounded-card" />
           </div>
         ) : (
           <>
-            <section className="mt-4 flex flex-col gap-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm sm:flex-row sm:items-start">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300">
-                <GraduationCap className="h-6 w-6" />
+            <section className="relative mt-4 flex flex-col gap-5 overflow-hidden rounded-card border border-line bg-surface p-5 pt-6 shadow-card sm:p-6 sm:pt-7 lg:flex-row lg:items-start">
+              <span className="absolute inset-x-0 top-0 h-1 bg-primary" aria-hidden="true" />
+              <span className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-control bg-primary-soft text-primary sm:flex">
+                <GraduationCap className="h-6 w-6" aria-hidden="true" />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  {course.code && <span className="rounded-md bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">{course.code}</span>}
-                  {role === ROLE_ADMIN && <span className="text-xs text-slate-500 dark:text-slate-400">Курс № {course.id}</span>}
-                  {details.enrolled && <span className="rounded-md bg-emerald-50 dark:bg-emerald-500/10 px-1.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">Вы записаны</span>}
+                  {course.code && <span className="rounded-md bg-primary-soft px-1.5 py-0.5 text-xs font-bold tabular-nums text-primary-fg">{course.code}</span>}
+                  {role === ROLE_ADMIN && <span className="text-xs tabular-nums text-fg-muted">Курс № {course.id}</span>}
+                  {details.enrolled && <Badge tone="success" icon={Check}>Вы записаны</Badge>}
                 </div>
-                <h1 className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{course.title}</h1>
-                {course.description && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{course.description}</p>}
-                <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-                  <span>Преподаватель: {course.teacherFullName || course.teacherEmail || 'не назначен'}</span>
-                  <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> Студентов: {details.studentCount}</span>
+                <h1 className="mt-2 break-words text-[1.5rem] leading-8 font-semibold text-fg sm:text-title">{course.title}</h1>
+                {course.description && <p className="mt-2 max-w-reading whitespace-pre-wrap text-body text-fg-secondary">{course.description}</p>}
+                <p className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-small text-fg-muted">
+                  <span className="flex items-center gap-1.5"><UserRound className="h-3.5 w-3.5" aria-hidden="true" /> Преподаватель: {course.teacherFullName || course.teacherEmail || 'не назначен'}</span>
+                  <span className="flex items-center gap-1.5 tabular-nums"><Users className="h-3.5 w-3.5" aria-hidden="true" /> Студентов: {details.studentCount}</span>
                 </p>
               </div>
-              <div className="flex shrink-0 gap-2">
-                {canManage && <InviteLinkControls courseId={course.id} />}
-              </div>
+              {canManage && (
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <InviteLinkControls courseId={course.id} />
+                </div>
+              )}
             </section>
 
-            <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <div className="space-y-4">
+            <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="space-y-6">
                 {canManage && <DocumentUpload course={course} onUploaded={() => setDocsVersion((version) => version + 1)} />}
-                <CourseDocuments courseId={course.id} version={docsVersion} />
+                <CourseDocuments courseId={course.id} canManage={canManage} version={docsVersion} />
                 {canManage && (
                   <CourseDrafts courseId={course.id} version={docsVersion} onPublished={() => setAssignmentsVersion((version) => version + 1)} />
                 )}
                 <CourseAssignments courseId={course.id} canManage={canManage} version={docsVersion + assignmentsVersion} />
                 {canManage && <CourseStudents courseId={course.id} onChange={() => loadDetails().catch(() => {})} />}
               </div>
-              <div className="lg:sticky lg:top-20 lg:self-start">
+              <div className="lg:sticky lg:top-24 lg:self-start">
                 <CourseChat course={course} />
               </div>
             </div>
@@ -189,7 +200,6 @@ function InviteLinkControls({ courseId }) {
     }
   }
 
-  const buttonClass = 'flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-3.5 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60'
   if (loadError && !code) {
     return (
       <ErrorState
@@ -205,13 +215,12 @@ function InviteLinkControls({ courseId }) {
   }
   return (
     <>
-      <button type="button" onClick={copy} disabled={!code} className={buttonClass} title={link || 'Загрузка ссылки…'}>
-        {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+      <Button variant="secondary" icon={copied ? Check : Copy} onClick={copy} disabled={!code} title={link || 'Загрузка ссылки…'}>
         {copied ? 'Скопировано' : 'Ссылка для студентов'}
-      </button>
-      <button type="button" onClick={() => setConfirming(true)} disabled={!code} className={buttonClass} title="Сгенерировать новую ссылку" aria-label="Новая ссылка для студентов">
-        <RefreshCw className="h-4 w-4" /> <span className="hidden sm:inline">Новая ссылка</span>
-      </button>
+      </Button>
+      <Button variant="outline" icon={RefreshCw} onClick={() => setConfirming(true)} disabled={!code} title="Сгенерировать новую ссылку" aria-label="Новая ссылка для студентов">
+        <span className="hidden sm:inline">Новая ссылка</span>
+      </Button>
       {confirming && (
         <ConfirmDialog
           title="Сгенерировать новую ссылку?"
@@ -228,16 +237,40 @@ function InviteLinkControls({ courseId }) {
   )
 }
 
-function CourseDocuments({ courseId, version }) {
+/**
+ * The course's documents. The teacher and ADMIN also get "Требуют проверки: N" - documents students do not see because
+ * the AI or the OCR failed on them, until a type is set by hand - which filters the list to them.
+ */
+function CourseDocuments({ courseId, canManage, version }) {
   const { notifyError } = useToast()
   const [page, setPage] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const [reviewOnly, setReviewOnly] = useState(false)
+  // null until known (or when the count could not be loaded): then no counter is shown.
+  const [reviewCount, setReviewCount] = useState(null)
 
   const fetchPage = useCallback((number) => api.get('/documents', {
-    params: { courseId, page: number, size: DOCS_PAGE_SIZE },
-  }).then(({ data }) => data), [courseId])
+    params: { courseId, page: number, size: DOCS_PAGE_SIZE, ...(reviewOnly ? { needsReview: true } : {}) },
+  }).then(({ data }) => data), [courseId, reviewOnly])
+
+  useEffect(() => {
+    if (!canManage) return undefined
+    let cancelled = false
+    api.get('/documents', { params: { courseId, needsReview: true, size: 1 } })
+      .then(({ data }) => !cancelled && setReviewCount(data.totalElements))
+      .catch(() => !cancelled && setReviewCount(null))
+    return () => {
+      cancelled = true
+    }
+  }, [canManage, courseId, version, attempt])
+
+  const toggleReview = () => {
+    setPage(null)
+    setLoading(true)
+    setReviewOnly((value) => !value)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -282,38 +315,69 @@ function CourseDocuments({ courseId, version }) {
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-      <h2 className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-5 py-3.5 text-sm font-semibold text-slate-900 dark:text-white">
-        <FileText className="h-4 w-4 text-indigo-600" /> Документы курса
-        {page && <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300">{page.totalElements}</span>}
-      </h2>
+    <section className="rounded-card border border-line bg-surface shadow-card">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line-subtle px-5 py-4 sm:px-6">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+          <FileText className="h-4.5 w-4.5 text-primary" aria-hidden="true" /> Документы курса
+          {page && !reviewOnly && <span className="rounded-full bg-page-alt px-2 py-0.5 text-xs font-semibold tabular-nums text-fg-secondary">{page.totalElements}</span>}
+        </h2>
+        {canManage && (reviewOnly || reviewCount > 0) && (
+          <button
+            type="button"
+            onClick={toggleReview}
+            aria-pressed={reviewOnly}
+            title={reviewOnly ? 'Показать все документы' : 'Студенты не видят эти документы, пока вы не укажете их тип'}
+            className={`ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ring-1 ring-inset transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${reviewOnly
+              ? 'bg-warning text-on-primary ring-warning hover:bg-warning/90'
+              : 'bg-warning-soft text-warning-fg ring-warning/30 hover:ring-warning/60'}`}
+          >
+            <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+            Требуют проверки: {reviewCount ?? 0}
+            {reviewOnly && <X className="h-3.5 w-3.5" aria-hidden="true" />}
+          </button>
+        )}
+      </div>
       {error ? (
         <ErrorState title="Не удалось загрузить документы курса" message={error} onRetry={retry} />
       ) : !page && loading ? (
-        <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Загрузка…</div>
+        <div role="status" className="space-y-3 px-5 py-4 sm:px-6">
+          <span className="sr-only">Загрузка…</span>
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="flex items-center gap-3">
+              <Skeleton className="h-9 w-9 shrink-0" rounded="rounded-control" />
+              <SkeletonLines lines={2} className="flex-1" />
+            </div>
+          ))}
+        </div>
       ) : page?.content.length === 0 ? (
-        <p className="px-5 py-8 text-center text-sm text-slate-500 dark:text-slate-400">Доступных вам документов в курсе пока нет.</p>
+        <div className="p-5 sm:p-6">
+          <EmptyState
+            compact
+            icon={FolderOpen}
+            title={reviewOnly ? 'Документов, которые требуют проверки, нет.' : 'Доступных вам документов в курсе пока нет.'}
+          />
+        </div>
       ) : page && (
         <>
-          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+          <ul className="divide-y divide-line-subtle">
             {page.content.map((row) => {
               const doc = withLiveStatus(row, liveStatuses[row.id])
               const format = getFileFormat(doc)
               const FormatIcon = format.icon
               return (
-                <li key={doc.id} className="flex items-center gap-2 pr-3 transition hover:bg-indigo-50/40 dark:hover:bg-indigo-500/10">
-                  <Link to={`/documents/${doc.id}`} state={{ from: `/courses/${courseId}` }} className="group flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 sm:pl-5">
-                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${format.tile}`}><FormatIcon className="h-4 w-4" /></span>
+                <li key={doc.id} className="flex items-center gap-2 pr-3 transition-colors hover:bg-page">
+                  <Link to={`/documents/${doc.id}`} state={{ from: `/courses/${courseId}` }} className="group flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary sm:pl-6">
+                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-control ${format.tile}`}><FormatIcon className="h-4 w-4" aria-hidden="true" /></span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-slate-900 dark:text-white group-hover:text-indigo-700 dark:group-hover:text-indigo-300">{doc.originalFileName}</span>
-                      <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="block truncate text-sm font-medium text-fg group-hover:text-primary-fg">{doc.originalFileName}</span>
+                      <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-fg-muted">
                         <DocumentAiBadge doc={doc} />
                         <PiiBadge doc={doc} />
                         <OcrBadge doc={doc} />
-                        <span className="truncate">{VISIBILITY_LABELS[doc.visibility]} · {formatDateTime(doc.uploadedAt)}</span>
+                        <span className="truncate tabular-nums">{VISIBILITY_LABELS[doc.visibility]} · {formatDateTime(doc.uploadedAt)}</span>
                       </span>
                     </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-indigo-600" />
+                    <ChevronRight className="h-4 w-4 shrink-0 text-fg-muted group-hover:text-primary" aria-hidden="true" />
                   </Link>
                   {canDeleteDocument(doc) && (
                     <ReclassifyButton doc={doc} onUpdated={(changes) => updateDoc(doc.id, changes)} compact />
@@ -323,9 +387,11 @@ function CourseDocuments({ courseId, version }) {
             })}
           </ul>
           {!page.last && (
-            <button type="button" onClick={loadMore} disabled={loading} className="flex w-full items-center justify-center gap-2 border-t border-slate-100 dark:border-slate-800 py-2.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60">
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />} Показать ещё
-            </button>
+            <div className="border-t border-line-subtle p-3">
+              <Button variant="ghost" onClick={loadMore} loading={loading} className="w-full">
+                Показать ещё
+              </Button>
+            </div>
           )}
         </>
       )}

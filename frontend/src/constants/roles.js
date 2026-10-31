@@ -1,4 +1,5 @@
 import { Building2, GraduationCap, Presentation } from 'lucide-react'
+import { BADGE_TONES } from '../components/ui/styles'
 
 // Same names as the backend Role enum and the "role" claim in the JWT.
 export const ROLE_STUDENT = 'ROLE_STUDENT'
@@ -26,13 +27,13 @@ export function normalizeRole(role) {
 
 export const ROLE_LABELS = Object.fromEntries(ROLES.map((role) => [role.value, role.label]))
 
-// Role badge colours (Navbar, admin users table).
+// Role badge colours (Navbar, admin users table); the role icon always goes with them.
 export const ROLE_BADGE_STYLES = {
-  ROLE_STUDENT: 'bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300 ring-sky-200 dark:ring-sky-500/30',
-  ROLE_TEACHER: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-amber-200 dark:ring-amber-500/30',
-  ROLE_ADMIN: 'bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300 ring-violet-200 dark:ring-violet-500/30',
+  ROLE_STUDENT: `${BADGE_TONES.primary} ring-current/15`,
+  ROLE_TEACHER: `${BADGE_TONES.warning} ring-current/15`,
+  ROLE_ADMIN: `${BADGE_TONES.neutral} ring-current/25`,
 }
-export const DEFAULT_ROLE_BADGE_STYLE = 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 ring-slate-200 dark:ring-slate-700'
+export const DEFAULT_ROLE_BADGE_STYLE = `${BADGE_TONES.neutral} ring-current/15`
 
 /** The role's Russian name; never the ROLE_* code (an unknown role reads "Неизвестная роль"). */
 export const roleLabel = (role) => ROLE_LABELS[role] ?? 'Неизвестная роль'

@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Check, FileText, Lock, Mail, ShieldCheck, Sparkles, User, Users } from 'lucide-react'
+import { Check, Lock, Mail, User } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { GOOGLE_AUTH_URL, getErrorMessage, messageForCode } from '../api/axios'
+import api, { GOOGLE_AUTH_URL, getErrorMessage, messageForCode } from '../api/axios'
 import { ROLE_STUDENT, ROLE_TEACHER } from '../constants/roles'
 import { Alert, SubmitButton, TextField } from '../components/FormControls'
 import ForgotPasswordModal from '../components/ForgotPasswordModal'
 import ThemeToggle from '../components/ThemeToggle'
 import EmailVerificationStep from '../components/EmailVerificationStep'
+import AuthHero from '../components/AuthHero'
+import { buttonClass, checkboxClass, linkClass } from '../components/ui/styles'
 import { pathFromLocationState, rememberPostLoginRedirect } from '../utils/postLoginRedirect'
 
+// Codes from OAuth2FailureHandler (?error= on /login) and OAuth2RedirectHandler (location.state.oauthError).
 const OAUTH_ERRORS = {
-  oauth2_failed: 'Не удалось войти через Google. Попробуйте ещё раз.',
+  oauth2_failed: 'Не удалось войти через Google. Попробуйте ещё раз или войдите по паролю.',
+  oauth2_cancelled: 'Вход через Google отменён. Попробуйте ещё раз или войдите по паролю.',
   email_not_provided: 'Google не передал email. Разрешите доступ к email и попробуйте снова.',
   profile_failed: 'Не удалось загрузить профиль после входа через Google.',
 }
@@ -66,7 +70,9 @@ export default function AuthPage() {
   const [mode, setMode] = useState('login')
   const [form, setForm] = useState(EMPTY_FORM)
   const [fieldErrors, setFieldErrors] = useState({})
-  const [error, setError] = useState(() => OAUTH_ERRORS[location.state?.oauthError] ?? '')
+  const [error, setError] = useState(
+    () => OAUTH_ERRORS[location.state?.oauthError ?? new URLSearchParams(location.search).get('error')] ?? '',
+  )
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
   // After a 429 from login: { email, until (ms), message }. The server blocks this email from this browser's IP,
@@ -75,6 +81,23 @@ export default function AuthPage() {
   const [showReset, setShowReset] = useState(false)
   // Set once an unverified account needs its email confirmed: { email, info, cooldown }.
   const [verification, setVerification] = useState(null)
+  // null while /auth/providers loads: the Google button appears only once the backend says it is configured.
+  const [googleEnabled, setGoogleEnabled] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api.get('/auth/providers')
+      .then(({ data }) => { if (!cancelled) setGoogleEnabled(data?.google === true) })
+      .catch(() => { if (!cancelled) setGoogleEnabled(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  // The error code is already in the alert; drop ?error= so a reload does not show it again.
+  useEffect(() => {
+    if (new URLSearchParams(location.search).has('error')) {
+      navigate(location.pathname, { replace: true, state: location.state })
+    }
+  }, [location.search, location.pathname, location.state, navigate])
 
   const isRegister = mode === 'register'
 
@@ -165,54 +188,14 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-      <aside className="relative hidden w-1/2 overflow-hidden bg-gradient-to-br from-indigo-700 via-indigo-600 to-violet-600 p-12 text-white lg:flex lg:flex-col lg:justify-between">
-        <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-violet-400/20 blur-3xl" />
+    // Desktop: the hero stays fixed on the left and only the form column scrolls. Mobile: the hero is a header.
+    <div className="relative flex min-h-dvh flex-col bg-page lg:h-dvh lg:flex-row lg:overflow-hidden">
+      <AuthHero isRegister={isRegister} />
+      {/* Top-right of the page: over the hero header on mobile, above the form column on desktop. */}
+      <ThemeToggle className="absolute right-3 top-3 z-20 lg:right-4 lg:top-4" />
 
-        <div className="relative flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
-            <FileText className="h-5 w-5" />
-          </div>
-          <span className="text-lg font-semibold">UniDocs Assistant</span>
-        </div>
-
-        <div className="relative max-w-md">
-          <h1 className="text-4xl font-bold leading-tight">
-            Интеллектуальный помощник по университетским документам
-          </h1>
-          <p className="mt-4 text-indigo-100">
-            Справки, заявления и учебные документы — в одном месте, без очередей в деканат.
-          </p>
-          <ul className="mt-8 space-y-4">
-            {[
-              { icon: Sparkles, text: 'Умный поиск и заполнение документов' },
-              { icon: Users, text: 'Студенты, преподаватели и деканат на одной платформе' },
-              { icon: ShieldCheck, text: 'Безопасный вход через университетский email или Google' },
-            ].map(({ icon: Icon, text }) => (
-              <li key={text} className="flex items-center gap-3 text-indigo-50">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15">
-                  <Icon className="h-4 w-4" />
-                </span>
-                {text}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <p className="relative text-sm text-indigo-200">© {new Date().getFullYear()} UniDocs Assistant</p>
-      </aside>
-
-      <main className="relative flex w-full items-center justify-center px-4 py-10 lg:w-1/2">
-        <ThemeToggle className="absolute right-4 top-4" />
-        <div className="w-full max-w-md">
-          <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white">
-              <FileText className="h-5 w-5" />
-            </div>
-            <span className="text-lg font-semibold text-slate-900 dark:text-white">UniDocs Assistant</span>
-          </div>
-
+      <main className="flex flex-1 flex-col px-4 pb-10 pt-6 sm:px-6 lg:w-[45%] lg:overflow-y-auto lg:py-12">
+        <div className="mx-auto w-full max-w-md rounded-card border border-line bg-surface p-5 shadow-card sm:p-8 lg:my-auto">
           {isRegister && <RegisterSteps current={verification ? 1 : 0} />}
 
           {verification ? (
@@ -225,14 +208,14 @@ export default function AuthPage() {
             />
           ) : (
             <div key={mode} className="animate-step-in">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <h2 className="text-section text-fg">
               {isRegister ? 'Создайте аккаунт' : 'С возвращением!'}
             </h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            <p className="mt-1 text-sm text-fg-muted">
               {isRegister ? 'Заполните данные для регистрации' : 'Войдите, чтобы продолжить работу'}
             </p>
 
-            <div className="mt-6 grid grid-cols-2 rounded-xl bg-slate-200/70 dark:bg-slate-800 p-1" role="tablist">
+            <div className="mt-6 grid grid-cols-2 rounded-control border border-line bg-page-alt p-1" role="tablist">
               {[
                 { value: 'login', label: 'Вход' },
                 { value: 'register', label: 'Регистрация' },
@@ -243,8 +226,8 @@ export default function AuthPage() {
                   role="tab"
                   aria-selected={mode === value}
                   onClick={() => switchMode(value)}
-                  className={`rounded-lg py-2 text-sm font-medium transition ${
-                    mode === value ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                  className={`rounded-md py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    mode === value ? 'bg-surface text-primary-fg shadow-soft ring-1 ring-line' : 'text-fg-secondary hover:text-fg'
                   }`}
                 >
                   {label}
@@ -297,7 +280,7 @@ export default function AuthPage() {
                     <button
                       type="button"
                       onClick={() => setShowReset(true)}
-                      className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                      className={`${linkClass} text-sm`}
                     >
                       Забыли пароль?
                     </button>
@@ -306,17 +289,17 @@ export default function AuthPage() {
               </div>
 
               {isRegister && (
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm text-slate-700 dark:text-slate-200 transition hover:border-slate-400">
+                <label className="flex cursor-pointer items-start gap-3 rounded-control border border-line-strong bg-surface px-3 py-2.5 text-sm text-fg transition-colors hover:border-primary has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-ring">
                   <input
                     type="checkbox"
                     checked={form.teacherRequested}
                     onChange={(event) => setForm((current) => ({ ...current, teacherRequested: event.target.checked }))}
-                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    className={`mt-0.5 ${checkboxClass} focus:outline-none`}
                   />
                   <span>
                     Я преподаватель (роль подтверждает деканат)
                     {form.teacherRequested && (
-                      <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
+                      <span className="mt-0.5 block text-small text-fg-muted">
                         До подтверждения вы входите как студент; деканат увидит заявку в своей панели.
                       </span>
                     )}
@@ -333,27 +316,31 @@ export default function AuthPage() {
 
               {loginLocked && !error && (
                 // The alert above is cleared by typing; the reason for the disabled button must stay visible.
-                <p className="text-center text-xs text-amber-700 dark:text-amber-300" role="status">{loginLock.message}</p>
+                <p className="text-center text-small text-warning-fg" role="status">{loginLock.message}</p>
               )}
               <SubmitButton loading={loading} disabled={loading || loginLocked}>
                 {isRegister ? 'Зарегистрироваться' : loginLocked ? 'Вход временно заблокирован' : 'Войти'}
               </SubmitButton>
             </form>
 
-            <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-              или
-              <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-            </div>
+            {googleEnabled && (
+              <>
+                <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-wide text-fg-muted">
+                  <span className="h-px flex-1 bg-line" />
+                  или
+                  <span className="h-px flex-1 bg-line" />
+                </div>
 
-            <a
-              href={GOOGLE_AUTH_URL}
-              onClick={() => rememberPostLoginRedirect(pathFromLocationState(location.state))}
-              className="flex w-full items-center justify-center gap-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800/50 focus:outline-none focus:ring-4 focus:ring-slate-100"
-            >
-              <GoogleIcon />
-              Войти через Google
-            </a>
+                <a
+                  href={GOOGLE_AUTH_URL}
+                  onClick={() => rememberPostLoginRedirect(pathFromLocationState(location.state))}
+                  className={buttonClass({ variant: 'outline', className: 'h-11 w-full gap-3' })}
+                >
+                  <GoogleIcon />
+                  Войти через Google
+                </a>
+              </>
+            )}
             </div>
           )}
         </div>
@@ -382,22 +369,23 @@ function RegisterSteps({ current }) {
           <li key={title} className="flex flex-1 items-center gap-2">
             <span
               className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors duration-300 ${
-                active ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                active ? 'bg-primary text-on-primary' : 'bg-page-alt text-fg-muted'
               }`}
+              aria-current={index === current ? 'step' : undefined}
             >
-              {done ? <Check className="h-4 w-4" /> : index + 1}
+              {done ? <Check className="h-4 w-4" aria-hidden="true" /> : index + 1}
             </span>
             <span
               className={`text-xs font-medium transition-colors duration-300 ${
-                active ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'
+                active ? 'text-fg' : 'text-fg-muted'
               }`}
             >
               {title}
             </span>
             {index < REGISTER_STEPS.length - 1 && (
-              <span className="relative h-0.5 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+              <span className="relative h-0.5 flex-1 overflow-hidden rounded-full bg-line">
                 <span
-                  className={`absolute inset-y-0 left-0 bg-indigo-600 transition-all duration-500 ${
+                  className={`absolute inset-y-0 left-0 bg-primary transition-all duration-500 ${
                     done ? 'w-full' : 'w-0'
                   }`}
                 />

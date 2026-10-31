@@ -43,10 +43,16 @@ public class AuditService {
     public static final String DOCUMENT_CATEGORY_SET = "DOCUMENT_CATEGORY_SET";
     public static final String OCR_RETRY_REQUESTED = "OCR_RETRY_REQUESTED";
     public static final String TASK_SUBMITTED = "TASK_SUBMITTED";
+    /** A grade was given or changed; details carry the old and the new score. */
+    public static final String TASK_GRADED = "TASK_GRADED";
+    public static final String TASK_UNGRADED = "TASK_UNGRADED";
+    /** ADMIN ran the deadline reminders by hand (POST /admin/notifications/run-reminders). */
+    public static final String REMINDERS_RUN = "REMINDERS_RUN";
     public static final String ROLE_CHANGED = "ROLE_CHANGED";
     public static final String TEACHER_REQUEST_APPROVED = "TEACHER_REQUEST_APPROVED";
     public static final String TEACHER_REQUEST_REJECTED = "TEACHER_REQUEST_REJECTED";
     public static final String USER_DELETED = "USER_DELETED";
+    public static final String PROFILE_UPDATED = "PROFILE_UPDATED";
 
     private static final int MAX_DETAILS_LENGTH = 1_000;
 

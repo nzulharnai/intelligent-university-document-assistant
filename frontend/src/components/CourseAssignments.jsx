@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ClipboardList, Loader2, Lock, LockOpen, Pencil, Plus } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Award, ClipboardList, Loader2, Lock, LockOpen, Pencil, Plus } from 'lucide-react'
 import api, { describeError } from '../api/axios'
 import { useToast } from '../context/ToastContext'
 import useConfirm from '../hooks/useConfirm'
@@ -9,7 +10,7 @@ import ErrorState from './ErrorState'
 import AssignmentEditDialog from './AssignmentEditDialog'
 
 const PAGE_SIZE = 20
-const inputClass = 'w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white outline-none transition placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-500/30'
+const inputClass = 'w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-sm text-fg outline-none transition placeholder:text-fg-muted focus:border-primary focus:ring-4 focus:ring-ring'
 
 /**
  * The course's assignments (found by the AI in its documents or added by hand). Every enrolled student gets each one
@@ -133,16 +134,24 @@ export default function CourseAssignments({ courseId, canManage, version = 0 }) 
     }
   }
 
-  const actionClass = 'inline-flex shrink-0 items-center gap-1 self-start rounded-lg border px-2 py-1 text-xs font-medium transition disabled:opacity-60'
+  const actionClass = 'inline-flex shrink-0 items-center gap-1 self-start rounded-control border px-2 py-1 text-xs font-medium transition disabled:opacity-60'
   const manageActions = (assignment) => (
     <>
+      <Link
+        to={`/courses/${courseId}/assignments/${assignment.id}`}
+        aria-label={`Оценки по заданию «${assignment.title}»`}
+        title="Работы студентов и оценки"
+        className={`${actionClass} border-primary/40 text-primary-fg hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
+      >
+        <Award className="h-3.5 w-3.5" aria-hidden="true" /> Оценки
+      </Link>
       <button
         type="button"
         onClick={() => setEditing(assignment)}
         disabled={busyId === assignment.id}
         aria-label={`Изменить «${assignment.title}»`}
         title="Изменить название, требования или дедлайн"
-        className={`${actionClass} border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800`}
+        className={`${actionClass} border-line-strong text-fg hover:bg-page-alt`}
       >
         <Pencil className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Изменить</span>
       </button>
@@ -151,7 +160,7 @@ export default function CourseAssignments({ courseId, canManage, version = 0 }) 
           type="button"
           onClick={() => setClosed(assignment, false)}
           disabled={busyId === assignment.id}
-          className={`${actionClass} border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10`}
+          className={`${actionClass} border-success/30 text-success-fg hover:bg-success-soft`}
         >
           <LockOpen className="h-3.5 w-3.5" /> Открыть снова
         </button>
@@ -160,7 +169,7 @@ export default function CourseAssignments({ courseId, canManage, version = 0 }) 
           type="button"
           onClick={() => setClosed(assignment, true)}
           disabled={busyId === assignment.id}
-          className={`${actionClass} border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-500/10`}
+          className={`${actionClass} border-warning/30 text-warning-fg hover:bg-warning-soft`}
         >
           <Lock className="h-3.5 w-3.5" /> Закрыть
         </button>
@@ -169,18 +178,18 @@ export default function CourseAssignments({ courseId, canManage, version = 0 }) 
   )
 
   return (
-    <section id="assignments" className="scroll-mt-20 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-      <h2 className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-5 py-3.5 text-sm font-semibold text-slate-900 dark:text-white">
-        <ClipboardList className="h-4 w-4 text-indigo-600" /> Задания курса
-        {page && <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300">{page.totalElements}</span>}
+    <section id="assignments" className="scroll-mt-20 rounded-card border border-line bg-surface shadow-card">
+      <h2 className="flex items-center gap-2 border-b border-line-subtle px-5 py-4 text-base font-semibold text-fg sm:px-6">
+        <ClipboardList className="h-4 w-4 text-primary-fg" /> Задания курса
+        {page && <span className="rounded-full bg-page-alt px-2 py-0.5 text-xs font-semibold text-fg-secondary">{page.totalElements}</span>}
       </h2>
       <div className="p-4">
         {error ? (
           <ErrorState title="Не удалось загрузить задания" message={error} onRetry={retry} />
         ) : !page ? (
-          <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Загрузка…</div>
+          <div className="flex items-center justify-center gap-2 py-6 text-sm text-fg-muted"><Loader2 className="h-4 w-4 animate-spin" /> Загрузка…</div>
         ) : page.content.length === 0 ? (
-          <p className="py-4 text-center text-sm text-slate-500 dark:text-slate-400">
+          <p className="py-4 text-center text-sm text-fg-muted">
             Заданий пока нет. ИИ находит их в загруженных силлабусах и заданиях{canManage ? ', или добавьте задание вручную' : ''}.
           </p>
         ) : (
@@ -203,20 +212,20 @@ export default function CourseAssignments({ courseId, canManage, version = 0 }) 
             type="button"
             onClick={loadMore}
             disabled={loadingMore}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-control border border-line-strong py-2 text-sm font-medium text-fg transition hover:bg-page-alt disabled:opacity-60"
           >
             {loadingMore && <Loader2 className="h-4 w-4 animate-spin" />} Показать ещё
           </button>
         )}
 
         {canManage && (
-          <form onSubmit={create} className="mt-4 space-y-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-3">
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300"><Plus className="h-3.5 w-3.5" /> Новое задание</p>
+          <form onSubmit={create} className="mt-4 space-y-2 rounded-xl border border-dashed border-line-strong p-3">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-fg-secondary"><Plus className="h-3.5 w-3.5" /> Новое задание</p>
             <input value={form.title} onChange={update('title')} required maxLength={255} placeholder="Название, например «Practice 04»" className={inputClass} aria-label="Название задания" />
             <textarea value={form.description} onChange={update('description')} rows={2} maxLength={2000} placeholder="Требования (необязательно)" className={`${inputClass} resize-none`} aria-label="Требования" />
             <div className="flex gap-2">
               <input type="datetime-local" value={form.deadline} onChange={update('deadline')} className={inputClass} aria-label="Дедлайн" />
-              <button type="submit" disabled={saving || !form.title.trim()} className="flex shrink-0 items-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60">
+              <button type="submit" disabled={saving || !form.title.trim()} className="flex shrink-0 items-center gap-2 rounded-control bg-primary px-3 text-sm font-semibold text-on-primary transition hover:bg-primary-hover disabled:opacity-60">
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />} Выдать
               </button>
             </div>

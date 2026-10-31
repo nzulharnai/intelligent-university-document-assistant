@@ -49,6 +49,11 @@ public record DocumentResponse(
          * DONE when the text came from OCR; null when no OCR was needed. {@code textFromOcr}: the text is recognized.
          */
         OcrStatus ocrStatus,
-        boolean textFromOcr
+        boolean textFromOcr,
+        /**
+         * A scan whose text is not recognized (yet): it is unknown whether it holds personal data, so a student gets
+         * the original only when the teacher allowed it ("Скан не проверен на личные данные").
+         */
+        boolean piiUnknown
 ) {
 }

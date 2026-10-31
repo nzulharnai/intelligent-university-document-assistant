@@ -1,9 +1,10 @@
 package com.university.docassistant.controller;
 
 import com.university.docassistant.dto.PageResponse;
+import com.university.docassistant.dto.TaskDtos.TaskStateFilter;
+import com.university.docassistant.dto.TaskDtos.TaskSummary;
 import com.university.docassistant.dto.TaskDtos.UpdateStatusRequest;
 import com.university.docassistant.dto.TaskResponse;
-import com.university.docassistant.entity.TaskStatus;
 import com.university.docassistant.service.TaskService;
 import com.university.docassistant.util.SortValidator;
 import jakarta.validation.Valid;
@@ -33,14 +34,24 @@ public class TaskController {
 
     private final TaskService taskService;
 
-    /** The current user's tasks, nearest deadline first (tasks without a deadline last); optional status filter. */
+    /**
+     * The current user's own tasks, nearest deadline first (tasks without a deadline last); optional {@code state}
+     * filter (TaskStateFilter) and {@code courseId}.
+     */
     @GetMapping("/my")
-    public PageResponse<TaskResponse> my(@RequestParam(value = "status", required = false) TaskStatus status,
-                                         @PageableDefault(size = 20, sort = "deadline", direction = Sort.Direction.ASC)
+    public PageResponse<TaskResponse> my(@RequestParam(value = "state", defaultValue = "ALL") TaskStateFilter state,
+                                         @RequestParam(value = "courseId", required = false) Long courseId,
+                                         @PageableDefault(size = 20, sort = {"deadline", "id"}, direction = Sort.Direction.ASC)
                                          Pageable pageable,
                                          @AuthenticationPrincipal UserDetails principal) {
-        return taskService.listMine(principal.getUsername(), status,
+        return taskService.listMine(principal.getUsername(), state, courseId,
                 SortValidator.requireSortable(pageable, SORTABLE_FIELDS));
+    }
+
+    /** "К сдаче: N · Просрочено: M · Оценено: K" over the current user's tasks. */
+    @GetMapping("/my/summary")
+    public TaskSummary summary(@AuthenticationPrincipal UserDetails principal) {
+        return taskService.summary(principal.getUsername());
     }
 
     /** "Upcoming deadlines": unfinished tasks due from now on, nearest first. */

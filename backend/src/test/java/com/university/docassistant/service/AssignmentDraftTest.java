@@ -81,7 +81,7 @@ class AssignmentDraftTest {
         when(access.currentUser(TEACHER)).thenReturn(teacher);
         when(access.authorizeCourse(teacher, 10L, Permission.MANAGE_ASSIGNMENTS)).thenReturn(course);
         when(assignments.findViewById(anyLong())).thenReturn(Optional.of(new AssignmentResponse(1L, "Lab 1", null, null,
-                AssignmentStatus.ACTIVE, 10L, "Algorithms", null, null, null, null, null, null, null)));
+                AssignmentStatus.ACTIVE, 10L, "Algorithms", null, null, null, null, null, null, null, false, true, null)));
     }
 
     private Assignment assignment(long id, String title, AssignmentStatus status, Course of) {

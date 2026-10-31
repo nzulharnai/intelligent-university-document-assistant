@@ -1,6 +1,7 @@
 package com.university.docassistant.controller;
 
 import com.university.docassistant.service.AdminService;
+import com.university.docassistant.service.DeadlineReminderService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -34,8 +35,13 @@ class AdminControllerSecurityTest {
         }
 
         @Bean
-        AdminController adminController(AdminService adminService) {
-            return new AdminController(adminService);
+        DeadlineReminderService deadlineReminderService() {
+            return mock(DeadlineReminderService.class);
+        }
+
+        @Bean
+        AdminController adminController(AdminService adminService, DeadlineReminderService reminders) {
+            return new AdminController(adminService, reminders);
         }
     }
 
@@ -44,6 +50,9 @@ class AdminControllerSecurityTest {
 
     @Autowired
     private AdminService adminService;
+
+    @Autowired
+    private DeadlineReminderService reminders;
 
     private final UserDetails principal = User.withUsername("someone@uni.kz").password("x").roles("STUDENT").build();
 
@@ -74,5 +83,24 @@ class AdminControllerSecurityTest {
         controller.approveTeacherRequest(7L, admin);
 
         verify(adminService).approveTeacherRequest(7L, "dean@uni.kz");
+    }
+
+    @Test
+    @WithMockUser(roles = "TEACHER")
+    void onlyAdminRunsTheDeadlineRemindersByHand() {
+        clearInvocations(reminders);
+        assertThatThrownBy(() -> controller.runReminders(principal)).isInstanceOf(AccessDeniedException.class);
+        verifyNoInteractions(reminders);
+    }
+
+    @Test
+    @WithMockUser(username = "dean@uni.kz", roles = "ADMIN")
+    void adminRunsTheDeadlineReminders() {
+        clearInvocations(reminders);
+        UserDetails admin = User.withUsername("dean@uni.kz").password("x").roles("ADMIN").build();
+
+        controller.runReminders(admin);
+
+        verify(reminders).runNow("dean@uni.kz");
     }
 }

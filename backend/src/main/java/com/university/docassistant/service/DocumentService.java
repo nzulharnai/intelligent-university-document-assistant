@@ -73,7 +73,8 @@ import java.util.stream.Collectors;
  * view - the course's enrolled students (not TEACHER_ONLY documents), its teacher, ADMIN;
  * upload, delete, analyze - the course's teacher or ADMIN. Documents from before this rule were moved into an
  * archive course without teacher or students (DocumentCourseMigration), so they stay reachable by ADMIN only.
- * Students also never see a document while the AI is still classifying it (PENDING/PROCESSING).
+ * Students also never see a document while the AI is still classifying it (PENDING/PROCESSING), nor one the AI or
+ * the OCR failed on until the teacher sets its type by hand (AccessControlService.isHiddenFromStudents).
  */
 @Slf4j
 @Service
@@ -113,7 +114,7 @@ public class DocumentService {
     private final AssignmentService assignmentService;
     private final DocumentPrivacyService privacyService;
 
-    public record DocumentContent(Document document, Resource content) {
+    public record DocumentContent(Document document, Resource content, String fileName) {
     }
 
     /**
@@ -288,6 +289,8 @@ public class DocumentService {
 
     static final String ORIGINAL_RESTRICTED = "В оригинале документа есть персональные данные, преподаватель не открыл "
             + "его студентам. Доступна текстовая версия, где эти данные скрыты.";
+    static final String ORIGINAL_UNCHECKED = "Скан ещё не проверен на личные данные. Оригинал откроется после "
+            + "распознавания текста или когда преподаватель разрешит доступ.";
 
     static final String EXAM_ANSWERS_NOT_ANALYZED = "Ответы к экзамену не анализируются на задания";
 
@@ -313,10 +316,10 @@ public class DocumentService {
         // A failed parse only leaves the document without text; it never fails the upload.
         ExtractedText extracted = extractText(content, fileName, contentType);
         // US-09: personal data is masked before anything is built from the text. The snippet, the Q&A chunks, search
-        // and every AI job use the masked copy; the original stays in extracted_text. The teacher's e-mail stays.
+        // and every AI job use the masked copy; the original stays in extracted_text. The teacher's contacts stay.
         User teacher = target.course().getTeacher();
         DocumentPrivacyService.PreparedText prepared = privacyService.prepare(extracted.text(),
-                teacher == null ? null : teacher.getEmail());
+                teacher == null ? null : teacher.getEmail(), teacher == null ? null : teacher.getPhone());
         PersonalDataMasker.Result masked = prepared.masked();
         // US-07: a scan (PDF/image without text) is queued for OCR; it runs in the background job, never here.
         boolean needsOcr = documentProcessingService.needsOcr(contentType, extracted.text());
@@ -532,7 +535,7 @@ public class DocumentService {
     /**
      * Status of several documents at once, for polling lists: one query for the rows (access decided in Java with the
      * same rule as AccessControlService.can) and one grouped count of their assignments. Ids the user may not view -
-     * other courses, TEACHER_ONLY or still-classifying documents for a student, unknown ids - are left out silently,
+     * other courses, TEACHER_ONLY, still-classifying or failed documents for a student, unknown ids - are left out silently,
      * so the answer reveals nothing about them. At most {@value #MAX_STATUS_IDS} ids.
      */
     @Transactional(readOnly = true)
@@ -550,7 +553,8 @@ public class DocumentService {
         }
         Scope scope = access.scope(access.currentUser(email));
         List<DocumentRepository.StatusRow> visible = documentRepository.findStatusRows(distinct).stream()
-                .filter(row -> AccessControlService.canView(scope, row.courseId(), row.visibility(), row.aiStatus()))
+                .filter(row -> AccessControlService.canView(scope, row.courseId(), row.visibility(), row.aiStatus(),
+                        row.ocrStatus()))
                 .toList();
         if (visible.isEmpty()) {
             return List.of();
@@ -683,8 +687,11 @@ public class DocumentService {
     /** Assignments the AI found in a document; visible to everyone who can view the document. */
     @Transactional(readOnly = true)
     public PageResponse<AssignmentResponse> assignments(Long id, String email, Pageable pageable) {
-        access.authorizeDocument(access.currentUser(email), id, Permission.VIEW_DOCUMENT);
-        return PageResponse.of(assignmentRepository.findViewsBySourceDocumentId(id, pageable));
+        User user = access.currentUser(email);
+        Document document = access.authorizeDocument(user, id, Permission.VIEW_DOCUMENT);
+        boolean realName = access.can(user, document, Permission.MANAGE_COURSE);
+        return PageResponse.of(assignmentRepository.findViewsBySourceDocumentId(id, pageable)
+                .map(row -> realName ? row : row.withSourceDocumentName(fileName(row.sourceDocumentName(), false))));
     }
 
     /** False when the executor's queue is full; the document then simply stays without generated assignments. */
@@ -702,22 +709,27 @@ public class DocumentService {
         }
     }
 
-    /** Documents of the user's courses; with {@code courseId}, of that course only (403 if it is not theirs). */
+    /**
+     * Documents of the user's courses; with {@code courseId}, of that course only (403 if it is not theirs).
+     * {@code needsReview} ("Требуют проверки"): only those hidden from students because the AI or the OCR failed;
+     * with {@code courseId} for its teacher or ADMIN only (403 otherwise). Without a course a student gets nothing
+     * from it, since such documents are never in a student's scope.
+     */
     @Transactional(readOnly = true)
-    public PageResponse<DocumentResponse> list(String email, Long courseId, Pageable pageable) {
+    public PageResponse<DocumentResponse> list(String email, Long courseId, boolean needsReview, Pageable pageable) {
         User user = access.currentUser(email);
         if (courseId != null) {
-            access.authorizeCourse(user, courseId, Permission.VIEW_COURSE);
+            access.authorizeCourse(user, courseId, needsReview ? Permission.MANAGE_COURSE : Permission.VIEW_COURSE);
         }
         Scope scope = access.scope(user);
         Page<DocumentSummary> documents;
         if (scope.allCourses()) {
-            documents = documentRepository.findAllSummaries(courseId, pageable);
+            documents = documentRepository.findAllSummaries(courseId, needsReview, pageable);
         } else if (scope.isEmpty()) {
             documents = Page.empty(pageable);
         } else {
             documents = documentRepository.findSummariesInCourses(scope.courseIds(), scope.includeTeacherOnly(),
-                    courseId, pageable);
+                    courseId, needsReview, pageable);
         }
         Set<Long> managed = managedCourseIds(user, scope);
         return PageResponse.of(documents.map(document -> toResponse(document, user, canDelete(document, user, managed))));
@@ -763,7 +775,7 @@ public class DocumentService {
         Document document = access.authorizeDocument(user, id, Permission.VIEW_DOCUMENT);
         boolean original = access.can(user, document, Permission.MANAGE_COURSE);
         String text = original ? document.getExtractedText() : maskedText(document);
-        return new DocumentTextResponse(document.getId(), document.getOriginalFileName(),
+        return new DocumentTextResponse(document.getId(), fileName(document.getOriginalFileName(), original),
                 text != null, document.isTextTruncated(), text, !original, document.getPiiCount());
     }
 
@@ -773,7 +785,8 @@ public class DocumentService {
             return document.getMaskedText();
         }
         User teacher = document.getCourse() == null ? null : document.getCourse().getTeacher();
-        return privacyService.mask(document.getExtractedText(), teacher == null ? null : teacher.getEmail()).text();
+        return privacyService.mask(document.getExtractedText(), teacher == null ? null : teacher.getEmail(),
+                teacher == null ? null : teacher.getPhone()).text();
     }
 
     /** The original file as an attachment; see {@link #openOriginal}. */
@@ -789,25 +802,32 @@ public class DocumentService {
     }
 
     /**
-     * The original file. When its text contains personal data (pii_count > 0) a student gets it only if the course
-     * teacher allowed it (403 PII_ORIGINAL_RESTRICTED otherwise); every opening of such an original - by the teacher,
-     * ADMIN or an allowed student - is audited as PII_ORIGINAL_VIEWED.
+     * The original file. When its text contains personal data (pii_count > 0), or it is a scan not yet checked for
+     * personal data (DocumentPrivacyService.isPiiUnknown), a student gets it only if the course teacher allowed it
+     * (403 PII_ORIGINAL_RESTRICTED otherwise); every opening of such an original - by the teacher, ADMIN or an allowed
+     * student - is audited as PII_ORIGINAL_VIEWED.
      */
     private DocumentContent openOriginal(Long id, String email, String how) {
         User user = access.currentUser(email);
         Document document = access.authorizeDocument(user, id, Permission.VIEW_DOCUMENT);
-        if (document.getPiiCount() > 0) {
-            boolean managesCourse = access.can(user, document, Permission.MANAGE_COURSE);
+        boolean piiUnknown = privacyService.isPiiUnknown(document.getContentType(), document.getOcrStatus(),
+                document.getTextSnippet());
+        boolean managesCourse = access.can(user, document, Permission.MANAGE_COURSE);
+        if (document.getPiiCount() > 0 || piiUnknown) {
             if (!managesCourse && !document.isOriginalAllowedForStudents()) {
-                auditService.record(user.getEmail(), AuditService.ACCESS_DENIED,
-                        "Original of document " + id + " (" + how + "): contains personal data");
-                throw ApiException.forbidden(ErrorCodes.PII_ORIGINAL_RESTRICTED, ORIGINAL_RESTRICTED);
+                auditService.record(user.getEmail(), AuditService.ACCESS_DENIED, "Original of document " + id
+                        + " (" + how + "): " + (piiUnknown ? "scan not checked for personal data" : "contains personal data"));
+                throw ApiException.forbidden(ErrorCodes.PII_ORIGINAL_RESTRICTED,
+                        piiUnknown ? ORIGINAL_UNCHECKED : ORIGINAL_RESTRICTED);
             }
             auditService.record(user.getEmail(), AuditService.PII_ORIGINAL_VIEWED, "Document " + id + " \""
-                    + document.getOriginalFileName() + "\" (" + how + ", " + document.getPiiCount()
-                    + " personal data item(s): " + document.getPiiTypes() + ")");
+                    + document.getOriginalFileName() + "\" (" + how + ", "
+                    + (piiUnknown ? "scan not checked for personal data"
+                        : document.getPiiCount() + " personal data item(s): " + document.getPiiTypes()) + ")");
         }
-        return new DocumentContent(document, storageService.load(document.getStoredFileName()));
+        // The name goes into Content-Disposition: masked like everywhere else for those who do not manage the course.
+        return new DocumentContent(document, storageService.load(document.getStoredFileName()),
+                fileName(document.getOriginalFileName(), managesCourse));
     }
 
     /**
@@ -872,10 +892,14 @@ public class DocumentService {
                 || (document.courseId() != null && managedCourseIds.contains(document.courseId()));
     }
 
-    private static DocumentResponse toResponse(DocumentSummary document, User viewer, boolean canDelete) {
+    /**
+     * {@code canDelete} is "manages the document's course" (its teacher or ADMIN): they see the real file name,
+     * everyone else the name with personal data masked (US-09), as in the text tab.
+     */
+    private DocumentResponse toResponse(DocumentSummary document, User viewer, boolean canDelete) {
         return new DocumentResponse(
                 document.id(),
-                document.originalFileName(),
+                fileName(document.originalFileName(), canDelete),
                 document.contentType(),
                 document.fileSize(),
                 document.ownerEmail(),
@@ -898,10 +922,16 @@ public class DocumentService {
                 viewer.getRole() == Role.ROLE_STUDENT ? null : document.piiTypes(),
                 document.originalAllowedForStudents(),
                 document.ocrStatus(),
-                document.textFromOcr());
+                document.textFromOcr(),
+                privacyService.isPiiUnknown(document.contentType(), document.ocrStatus(), document.textSnippet()));
     }
 
     // Keeps only the last path segment (browsers may send "C:\...\name.pdf") and bounds the length.
+    /** US-09: the real file name for the course teacher and ADMIN, personal data masked for everyone else. */
+    private String fileName(String originalFileName, boolean real) {
+        return real ? originalFileName : privacyService.maskFileName(originalFileName);
+    }
+
     static String sanitizeFileName(String originalFileName) {
         String name = StringUtils.getFilename(StringUtils.cleanPath(
                 originalFileName == null ? "" : originalFileName));

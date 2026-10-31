@@ -1,14 +1,16 @@
 package com.university.docassistant.controller;
 
+import com.university.docassistant.dto.AuthDtos.UpdateProfileRequest;
 import com.university.docassistant.dto.AuthDtos.UserResponse;
-import com.university.docassistant.exception.ApiException;
-import com.university.docassistant.exception.ErrorCodes;
-import com.university.docassistant.repository.UserRepository;
+import com.university.docassistant.dto.NotificationDtos.PreferencesRequest;
+import com.university.docassistant.service.ProfileService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -17,19 +19,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class UserController {
 
-    private final UserRepository userRepository;
+    private final ProfileService profileService;
 
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> me(@AuthenticationPrincipal UserDetails principal) {
-        return userRepository.findByEmail(principal.getUsername())
-                .map(user -> ResponseEntity.ok(new UserResponse(
-                        user.getId(),
-                        user.getEmail(),
-                        user.getFullName(),
-                        user.getRole(),
-                        user.getProvider(),
-                        user.isEmailVerified(),
-                        user.isTeacherRequested())))
-                .orElseThrow(() -> ApiException.unauthorized(ErrorCodes.ACCOUNT_NOT_FOUND, "User no longer exists"));
+    public UserResponse me(@AuthenticationPrincipal UserDetails principal) {
+        return profileService.me(principal.getUsername());
+    }
+
+    /** The user's own name and phone; any role. */
+    @PatchMapping("/me")
+    public UserResponse updateMe(@Valid @RequestBody UpdateProfileRequest request,
+                                 @AuthenticationPrincipal UserDetails principal) {
+        return profileService.update(principal.getUsername(), request);
+    }
+
+    /** {@code emailNotifications}: whether notifications are also e-mailed; any role. */
+    @PatchMapping("/me/preferences")
+    public UserResponse updatePreferences(@Valid @RequestBody PreferencesRequest request,
+                                          @AuthenticationPrincipal UserDetails principal) {
+        return profileService.updatePreferences(principal.getUsername(), request);
     }
 }

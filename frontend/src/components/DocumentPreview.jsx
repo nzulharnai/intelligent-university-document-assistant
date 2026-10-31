@@ -3,7 +3,7 @@ import { CalendarClock, HardDrive, Loader2, User } from 'lucide-react'
 import api, { getBlobErrorMessage } from '../api/axios'
 import { formatSize, getFileFormat, isImage, isPreviewable } from '../utils/fileTypes'
 import { formatDateTime } from '../utils/dates'
-import { isOriginalRestricted } from '../utils/privacy'
+import { isOriginalRestricted, isPiiUnknown } from '../utils/privacy'
 import RestrictedOriginalNotice from './RestrictedOriginalNotice'
 
 /**
@@ -12,7 +12,9 @@ import RestrictedOriginalNotice from './RestrictedOriginalNotice'
  * ({@code onShowText} opens the "Текст" tab).
  */
 export default function DocumentPreview({ doc, onShowText }) {
-  return isOriginalRestricted(doc) ? <RestrictedOriginalNotice onShowText={onShowText} /> : <OriginalPreview doc={doc} />
+  return isOriginalRestricted(doc)
+    ? <RestrictedOriginalNotice onShowText={onShowText} unchecked={isPiiUnknown(doc) && !doc.piiCount} />
+    : <OriginalPreview doc={doc} />
 }
 
 function OriginalPreview({ doc }) {
@@ -58,18 +60,18 @@ function OriginalPreview({ doc }) {
   }, [doc.id, previewable])
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+    <div className="overflow-hidden rounded-card border border-line bg-page-alt">
       {preview.loading ? (
-        <div className="flex h-72 items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+        <div className="flex h-72 items-center justify-center gap-2 text-sm text-fg-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Загрузка предпросмотра…
         </div>
       ) : preview.url && isImage(doc) ? (
         <div className="flex max-h-[70vh] items-center justify-center p-4">
-          <img src={preview.url} alt={doc.originalFileName} className="max-h-[66vh] max-w-full rounded-lg object-contain shadow-sm" />
+          <img src={preview.url} alt={doc.originalFileName} className="max-h-[66vh] max-w-full rounded-control object-contain shadow-soft" />
         </div>
       ) : preview.url ? (
-        <div className={frameFocused ? 'outline-2 -outline-offset-2 outline-indigo-500' : ''}>
-          <iframe ref={frameRef} src={preview.url} title={doc.originalFileName} className="block h-[70vh] w-full bg-white dark:bg-slate-900 focus:outline-none" />
+        <div className={frameFocused ? 'outline-2 -outline-offset-2 outline-primary' : ''}>
+          <iframe ref={frameRef} src={preview.url} title={doc.originalFileName} className="block h-[70vh] w-full bg-surface focus:outline-none" />
         </div>
       ) : (
         <MetadataCard doc={doc} format={format} error={preview.error} />
@@ -83,13 +85,13 @@ function MetadataCard({ doc, format, error }) {
   return (
     <div className="p-6">
       <div className="flex flex-col items-center text-center">
-        <span className={`flex h-14 w-14 items-center justify-center rounded-2xl ${format.tile}`}>
+        <span className={`flex h-14 w-14 items-center justify-center rounded-card ${format.tile}`}>
           <FormatIcon className="h-7 w-7" />
         </span>
-        <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">
+        <p className="mt-3 text-sm font-medium text-fg">
           {error || 'Предпросмотр доступен для PDF и изображений'}
         </p>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+        <p className="mt-1 text-xs text-fg-muted">
           Скачайте файл или задайте вопрос по его тексту во вкладке «Чат с ИИ».
         </p>
       </div>
@@ -104,12 +106,12 @@ function MetadataCard({ doc, format, error }) {
 
 function MetaItem({ icon: Icon, label, value, title }) {
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-      <dt className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+    <div className="rounded-xl border border-line bg-surface p-3">
+      <dt className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-fg-muted">
         <Icon className="h-3.5 w-3.5" />
         {label}
       </dt>
-      <dd className="mt-1 truncate text-sm font-medium text-slate-900 dark:text-white" title={title ?? value}>{value}</dd>
+      <dd className="mt-1 truncate text-sm font-medium tabular-nums text-fg" title={title ?? value}>{value}</dd>
     </div>
   )
 }

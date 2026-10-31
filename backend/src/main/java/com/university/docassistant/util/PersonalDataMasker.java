@@ -16,7 +16,10 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>IIN: a 12-digit token that is not part of a longer number, and either has a valid IIN checksum and birth date,
  *       or follows the word "ИИН"/"ЖСН"/"IIN" (a mistyped IIN next to its label is still an IIN). A random 12-digit
- *       number (an order or invoice number) passes the checksum and the date check only rarely.</li>
+ *       number (an order or invoice number) passes the checksum and the date check only rarely. The same rule
+ *       applies to an IIN written in groups, 6+6 or 4+4+4 digits with one space or dash between them ("990101 300013",
+ *       "9901-0130-0013"); a grouped number right after "№", "No" or "номер" is taken for an order or document number
+ *       unless the IIN label is there too.</li>
  *   <li>Kazakhstan phone: +7 or 8, then 10 digits starting with 7 (all Kazakh codes do), with spaces, dashes or
  *       brackets between them.</li>
  *   <li>E-mail.</li>
@@ -29,7 +32,7 @@ import java.util.stream.Collectors;
 public final class PersonalDataMasker {
 
     /** Bump whenever a pattern changes: stored texts masked by an older version are masked again at startup. */
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
 
     private PersonalDataMasker() {
     }
@@ -92,6 +95,15 @@ public final class PersonalDataMasker {
     private static final Pattern TWELVE_DIGITS = Pattern.compile("(?<!\\d)\\d{12}(?!\\d)");
     private static final Pattern IIN_LABEL = Pattern.compile("(?:иин|жсн|iin)\\W{0,15}$",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
+    /**
+     * 6+6 or 4+4+4 digits, the same single space or dash between all groups, not part of a longer run of digit groups
+     * (a card number "1234 5678 9012 3456", a phone "+7 7011 2345 67").
+     */
+    private static final Pattern GROUPED_TWELVE_DIGITS = Pattern.compile(
+            "(?<![\\d+])(?<!\\d[ -])(?:\\d{6}([ -])\\d{6}|\\d{4}([ -])\\d{4}\\2\\d{4})(?![ -]?\\d)");
+    /** An order, document or registration number: "№ 9901 0130 0013", "No. 990101-300013", "номер 990101 300013". */
+    private static final Pattern NUMBER_LABEL = Pattern.compile("(?:№|\\bno\\.?|номер\\p{L}*)\\s*$",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
 
     private static final Pattern PHONE = Pattern.compile(
             "(?<![\\d+\\p{L}])(?:\\+7|8)[\\s-]?[(]?7(?:[\\s()-]{0,2}\\d){9}(?!\\d)",
@@ -121,6 +133,15 @@ public final class PersonalDataMasker {
             }
             boolean labelled = IIN_LABEL.matcher(current.substring(Math.max(0, match.start() - 20), match.start())).find();
             return labelled || isValidIin(match.group()) ? hit(PiiType.IIN, count, types) : null;
+        });
+        String grouped = masked;
+        masked = replace(masked, GROUPED_TWELVE_DIGITS, match -> {
+            String before = grouped.substring(Math.max(0, match.start() - 20), match.start());
+            if (IIN_LABEL.matcher(before).find()) {
+                return hit(PiiType.IIN, count, types);
+            }
+            boolean numbered = NUMBER_LABEL.matcher(before).find();
+            return !numbered && isValidIin(match.group().replaceAll("\\D", "")) ? hit(PiiType.IIN, count, types) : null;
         });
         masked = replace(masked, PHONE, match ->
                 keep.phones().contains(lastTenDigits(match.group())) ? null : hit(PiiType.PHONE, count, types));

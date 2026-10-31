@@ -167,6 +167,14 @@ public class Document {
     @Column(name = "ai_analyzed_at")
     private LocalDateTime aiAnalyzedAt;
 
+    /**
+     * The last AI analysis covered only part of a long text (a chunk got no usable answer): its drafts may miss
+     * assignments, "ИИ обработал документ не полностью" for the teacher. Cleared by the next complete analysis.
+     */
+    @Column(name = "ai_extraction_partial", nullable = false)
+    @ColumnDefault("false")
+    private boolean aiExtractionPartial;
+
     /** The ZIP import the document came from; null for single and multi-file uploads. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "batch_import_id")

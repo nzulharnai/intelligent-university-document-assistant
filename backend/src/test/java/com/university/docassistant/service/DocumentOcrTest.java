@@ -113,7 +113,7 @@ class DocumentOcrTest {
         void queued() throws Exception {
             when(documents.changeOcrStatus(ID, OcrStatus.PENDING, OcrStatus.RUNNING)).thenReturn(1);
             when(documents.findOcrSource(ID)).thenReturn(Optional.of(
-                    new OcrSource(ID, "stored", "scan.pdf", "application/pdf", "teacher@uni.kz")));
+                    new OcrSource(ID, "stored", "scan.pdf", "application/pdf", "teacher@uni.kz", null)));
             when(storage.load("stored")).thenReturn(new ByteArrayResource(new byte[]{1, 2, 3}));
         }
 

@@ -82,24 +82,24 @@ export default function EmailVerificationStep({ email, initialInfo = '', initial
   if (startSession) {
     return (
       <div className="animate-step-in flex flex-col items-center py-8 text-center" role="status">
-        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
-          <CheckCircle2 className="h-8 w-8" />
+        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-success-soft text-success">
+          <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
         </span>
-        <h2 className="mt-5 text-2xl font-bold text-slate-900 dark:text-white">Email подтверждён!</h2>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Аккаунт активирован. Перенаправляем в личный кабинет…</p>
-        <Loader2 className="mt-6 h-5 w-5 animate-spin text-indigo-600 dark:text-indigo-400" />
+        <h2 className="mt-5 text-section text-fg">Email подтверждён!</h2>
+        <p className="mt-2 text-sm text-fg-muted">Аккаунт активирован. Перенаправляем в личный кабинет…</p>
+        <Loader2 className="mt-6 h-5 w-5 animate-spin text-primary" aria-hidden="true" />
       </div>
     )
   }
 
   return (
     <div className="animate-step-in">
-      <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400">
-        <MailCheck className="h-6 w-6" />
+      <span className="flex h-12 w-12 items-center justify-center rounded-control bg-primary-soft text-primary">
+        <MailCheck className="h-6 w-6" aria-hidden="true" />
       </span>
-      <h2 className="mt-5 text-2xl font-bold text-slate-900 dark:text-white">Подтвердите email</h2>
-      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        Мы отправили 6-значный код на <b className="break-all text-slate-900 dark:text-white">{email}</b>. Введите его ниже.
+      <h2 className="mt-5 text-section text-fg">Подтвердите email</h2>
+      <p className="mt-1 text-sm text-fg-muted">
+        Мы отправили 6-значный код на <b className="break-all text-fg">{email}</b>. Введите его ниже.
       </p>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
@@ -115,22 +115,22 @@ export default function EmailVerificationStep({ email, initialInfo = '', initial
           <button
             type="button"
             onClick={onBack}
-            className="flex items-center gap-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+            className="flex items-center gap-1 rounded-sm text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            <ArrowLeft className="h-4 w-4" /> Назад
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Назад
           </button>
           <button
             type="button"
             onClick={handleResend}
             disabled={cooldown > 0 || resending || loading}
-            className="flex items-center gap-1 font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 disabled:cursor-not-allowed disabled:text-slate-400 dark:disabled:text-slate-500"
+            className="flex items-center gap-1 rounded-sm font-medium tabular-nums text-primary-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:text-fg-muted disabled:no-underline"
           >
-            <RotateCw className={`h-4 w-4 ${resending ? 'animate-spin' : ''}`} />
+            <RotateCw className={`h-4 w-4 ${resending ? 'animate-spin' : ''}`} aria-hidden="true" />
             {cooldown > 0 ? `Отправить повторно через ${cooldown} с` : 'Отправить код повторно'}
           </button>
         </div>
 
-        <p className="text-xs text-slate-500 dark:text-slate-400">Не пришло письмо? Проверьте папку «Спам».</p>
+        <p className="text-small text-fg-muted">Не пришло письмо? Проверьте папку «Спам».</p>
       </form>
     </div>
   )

@@ -80,12 +80,29 @@ public final class AuthDtos {
             Role role,
             AuthProvider provider,
             boolean emailVerified,
-            boolean teacherRequested
+            boolean teacherRequested,
+            /** Digits only, or null. */
+            String phone,
+            /** Notifications are e-mailed too (US-13). */
+            boolean emailNotifications
+    ) {
+    }
+
+    /** PATCH /users/me: the user's own name and phone (empty or null phone removes it). */
+    public record UpdateProfileRequest(
+            @NotBlank(message = "Введите ФИО") @Size(max = 150, message = "ФИО не длиннее 150 символов") String fullName,
+            @Size(max = 30, message = "Телефон не длиннее 30 символов") String phone
     ) {
     }
 
     public record MessageResponse(
             String message
+    ) {
+    }
+
+    /** Which sign-in methods the login page offers besides the password; google=false hides the Google button. */
+    public record ProvidersResponse(
+            boolean google
     ) {
     }
 }

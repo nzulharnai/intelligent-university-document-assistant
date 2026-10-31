@@ -17,7 +17,11 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -71,4 +75,38 @@ public class Task {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
+
+    /** Time of the latest submission (app time zone); null until the student hands something in. */
+    @Column(name = "submitted_at")
+    private LocalDateTime submittedAt;
+
+    /** The latest submission came after the deadline; recomputed when the deadline changes. */
+    @Column(nullable = false)
+    @ColumnDefault("false")
+    @Builder.Default
+    private boolean late = false;
+
+    /** US-11: the teacher's grade, at most the assignment's max_score. */
+    @Column(precision = 6, scale = 2)
+    private BigDecimal score;
+
+    /** US-11: the teacher's comment, up to 2000 characters. */
+    @Column(columnDefinition = "TEXT")
+    private String feedback;
+
+    @Column(name = "graded_at")
+    private LocalDateTime gradedAt;
+
+    /**
+     * US-13: when the "deadline in 24 hours" reminder was sent; claimed atomically, so it goes out once. Cleared when
+     * the deadline moves later, so the new deadline gets its own reminder.
+     */
+    @Column(name = "reminder_sent_at")
+    private LocalDateTime reminderSentAt;
+
+    /** US-11: who graded it; kept as null when that user is deleted. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "graded_by_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
+    private User gradedBy;
 }

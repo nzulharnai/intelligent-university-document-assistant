@@ -5,6 +5,7 @@ import com.university.docassistant.dto.AdminDtos.AuditLogResponse;
 import com.university.docassistant.dto.AdminDtos.AdminUserResponse;
 import com.university.docassistant.dto.AdminDtos.TeacherRequestResponse;
 import com.university.docassistant.dto.PageResponse;
+import com.university.docassistant.entity.NotificationType;
 import com.university.docassistant.entity.Role;
 import com.university.docassistant.entity.User;
 import com.university.docassistant.exception.ApiException;
@@ -49,6 +50,7 @@ public class AdminService {
     private final AuditService auditService;
     private final StorageService storageService;
     private final AssignmentService assignmentService;
+    private final NotificationService notificationService;
 
     /**
      * Users by id, a page at a time. {@code query} (2+ characters, case-insensitive) matches email or name;
@@ -118,6 +120,10 @@ public class AdminService {
         User user = pendingTeacherRequest(id);
         AdminUserResponse response = updateRole(id, Role.ROLE_TEACHER, adminEmail);
         auditService.record(adminEmail, AuditService.TEACHER_REQUEST_APPROVED, user.getEmail());
+        notificationService.notify(List.of(id), NotificationType.TEACHER_REQUEST_APPROVED,
+                "Заявка на роль преподавателя одобрена",
+                "Деканат подтвердил вашу роль преподавателя. Войдите заново, чтобы открылись возможности преподавателя.",
+                "/courses");
         return response;
     }
 
@@ -128,6 +134,10 @@ public class AdminService {
         user.setTeacherRequested(false);
         userRepository.save(user);
         auditService.record(adminEmail, AuditService.TEACHER_REQUEST_REJECTED, user.getEmail());
+        notificationService.notify(List.of(id), NotificationType.TEACHER_REQUEST_REJECTED,
+                "Заявка на роль преподавателя отклонена",
+                "Деканат отклонил заявку. Аккаунт остаётся студенческим со всеми вашими курсами.",
+                "/dashboard");
         log.info("Admin {} rejected the teacher role request of {}", adminEmail, user.getEmail());
         return toResponse(user);
     }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, Eye, FolderLock, GraduationCap, Loader2, Lock, MessageSquareText, ShieldCheck, Trash2 } from 'lucide-react'
+import { Download, Eye, FolderLock, FolderOpen, GraduationCap, Loader2, Lock, MessageSquareText, ShieldCheck, Trash2 } from 'lucide-react'
 import api, { describeError, getBlobErrorMessage } from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -18,6 +18,12 @@ import OcrBadge from '../components/OcrBadge'
 import ReclassifyButton from '../components/ReclassifyButton'
 import { canDeleteDocument, formatSize, getFileFormat } from '../utils/fileTypes'
 import { formatDateTime } from '../utils/dates'
+import Badge from '../components/ui/Badge'
+import Button from '../components/ui/Button'
+import EmptyState from '../components/ui/EmptyState'
+import PageHeader from '../components/ui/PageHeader'
+import Skeleton, { SkeletonLines } from '../components/ui/Skeleton'
+import { badgeClass, tableHeadClass, tableRowClass } from '../components/ui/styles'
 import { isOriginalRestricted } from '../utils/privacy'
 
 const PAGE_SIZE = 20
@@ -114,67 +120,63 @@ export default function DocumentVaultPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950">
+    <div className="min-h-screen bg-page">
       <Navbar />
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300">
-            <FolderLock className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Хранилище документов</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              {isStudent
-                ? 'Материалы курсов, на которые вы записаны'
-                : isAdmin ? 'Все документы системы' : 'Документы курсов, которые вы ведёте'}
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          icon={FolderLock}
+          title="Хранилище документов"
+          subtitle={isStudent
+            ? 'Материалы курсов, на которые вы записаны'
+            : isAdmin ? 'Все документы системы' : 'Документы курсов, которые вы ведёте'}
+        />
 
         {!isStudent && (
-          <div className="mt-6">
+          <div className="mt-8">
             <DocumentUpload onUploaded={reload} />
           </div>
         )}
 
-        <div className="mt-4 flex items-center gap-3 rounded-xl border border-emerald-100 dark:border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm">
-            <ShieldCheck className="h-4 w-4" />
-          </span>
-          <span className="font-medium">
+        <div className="mt-6 flex items-center gap-3 rounded-card border border-success/30 bg-success-soft px-4 py-3 text-sm text-success-fg">
+          <ShieldCheck className="h-5 w-5 shrink-0 text-success" aria-hidden="true" />
+          <span>
             {isStudent
               ? 'Вы видите только документы своих курсов. Загружает и удаляет документы преподаватель курса.'
               : 'Студенты видят документы только тех курсов, на которые записаны; заметки «Только преподаватель курса» им недоступны.'}
           </span>
         </div>
 
-        <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-4">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Документы</h2>
+        <section className="mt-6 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          <div className="flex items-center justify-between gap-3 border-b border-line-subtle px-5 py-4 sm:px-6">
+            <h2 className="text-base font-semibold text-fg">Документы</h2>
             {page && (
-              <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{page.totalElements}</span>
+              <span className="rounded-full bg-page-alt px-2.5 py-0.5 text-xs font-semibold tabular-nums text-fg-secondary">{page.totalElements}</span>
             )}
           </div>
           {error ? (
             <ErrorState title="Не удалось загрузить документы" message={error} onRetry={retry} />
           ) : !page && loading ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500 dark:text-slate-400">
-              <Loader2 className="h-4 w-4 animate-spin" /> Загрузка списка…
+            <div role="status" className="space-y-4 px-5 py-5 sm:px-6">
+              <span className="sr-only">Загрузка списка…</span>
+              {[0, 1, 2, 3].map((index) => (
+                <div key={index} className="flex items-center gap-3">
+                  <Skeleton className="h-9 w-9 shrink-0" rounded="rounded-control" />
+                  <SkeletonLines lines={2} className="flex-1" />
+                </div>
+              ))}
             </div>
           ) : page.content.length === 0 ? (
-            <div className="flex flex-col items-center py-16 text-center">
-              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-400">
-                <Lock className="h-7 w-7" />
-              </span>
-              <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">Документов пока нет</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {isStudent ? 'Запишитесь на курс, чтобы увидеть его материалы.' : 'Загрузите первый файл в один из своих курсов.'}
-              </p>
+            <div className="p-5 sm:p-6">
+              <EmptyState
+                icon={FolderOpen}
+                title="Документов пока нет"
+                description={isStudent ? 'Запишитесь на курс, чтобы увидеть его материалы.' : 'Загрузите первый файл в один из своих курсов.'}
+              />
             </div>
           ) : (
             <>
               {/* Below md: cards instead of the wide table. */}
-              <ul className="divide-y divide-slate-100 dark:divide-slate-800 md:hidden">
+              <ul className="divide-y divide-line-subtle md:hidden">
                 {page.content.map((doc) => (
                   <DocumentCard
                     key={doc.id}
@@ -186,9 +188,9 @@ export default function DocumentVaultPage() {
                   />
                 ))}
               </ul>
-              <div className="hidden overflow-x-auto md:block">
+              <div className="hidden max-h-[75vh] overflow-auto md:block">
                 <table className="w-full min-w-[960px] text-left text-sm">
-                  <thead className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  <thead className={tableHeadClass}>
                     <tr>
                       <th className="px-4 py-3 font-medium">Документ</th>
                       <th className="px-4 py-3 font-medium">Размер</th>
@@ -198,7 +200,7 @@ export default function DocumentVaultPage() {
                       <th className="px-4 py-3 text-right font-medium">Действия</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tbody>
                     {page.content.map((doc) => (
                       <DocumentRow
                         key={doc.id}
@@ -213,14 +215,11 @@ export default function DocumentVaultPage() {
                 </table>
               </div>
               {!page.last && (
-                <button
-                  type="button"
-                  onClick={loadMore}
-                  disabled={loading}
-                  className="flex w-full items-center justify-center gap-2 border-t border-slate-100 dark:border-slate-800 py-3 text-sm font-medium text-indigo-600 dark:text-indigo-400 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60"
-                >
-                  {loading && <Loader2 className="h-4 w-4 animate-spin" />} Показать ещё
-                </button>
+                <div className="border-t border-line-subtle p-3">
+                  <Button variant="ghost" onClick={loadMore} loading={loading} className="w-full">
+                    Показать ещё
+                  </Button>
+                </div>
               )}
             </>
           )}
@@ -231,69 +230,72 @@ export default function DocumentVaultPage() {
   )
 }
 
-const actionClass = 'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all duration-200 disabled:opacity-60'
+const actionClass = 'flex h-8 items-center gap-1.5 rounded-control border px-2.5 text-small font-medium transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:opacity-60'
+
+// File format, AI type, personal data, OCR and course: one aligned row of badges (table and cards).
+function DocumentBadges({ doc, format }) {
+  return (
+    <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold leading-4 ring-1 ring-inset ${format.badge}`}>{format.label}</span>
+      <DocumentAiBadge doc={doc} />
+      <PiiBadge doc={doc} />
+      <OcrBadge doc={doc} />
+      {doc.courseCode && <Badge tone="neutral" icon={GraduationCap}>{doc.courseCode}</Badge>}
+    </span>
+  )
+}
 
 function DocumentRow({ doc, busy, onDownload, onDelete, onUpdated }) {
   const format = getFileFormat(doc)
   const FormatIcon = format.icon
   return (
-    <tr className="transition-colors duration-200 hover:bg-indigo-50/40 dark:hover:bg-indigo-500/10">
-      <td className="max-w-[300px] px-4 py-3">
-        <Link to={`/documents/${doc.id}`} className="group flex max-w-full items-center gap-3 rounded-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100 dark:focus-visible:ring-indigo-500/30">
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${format.tile}`}>
+    <tr className={tableRowClass}>
+      <td className="max-w-[320px] px-4 py-3">
+        <Link to={`/documents/${doc.id}`} className="group flex max-w-full items-center gap-3 rounded-control focus:outline-none focus-visible:ring-4 focus-visible:ring-ring">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-control ${format.tile}`}>
             <FormatIcon className="h-4 w-4" />
           </span>
           <span className="min-w-0">
-            <span className="block truncate font-medium text-slate-900 dark:text-white group-hover:text-indigo-700 dark:group-hover:text-indigo-300 group-hover:underline" title={doc.originalFileName}>
+            <span className="block truncate font-medium text-fg group-hover:text-primary-fg group-hover:underline" title={doc.originalFileName}>
               {doc.originalFileName}
             </span>
-            <span className="mt-1 flex flex-wrap items-center gap-1">
-              <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ring-1 ring-inset ${format.badge}`}>{format.label}</span>
-              <DocumentAiBadge doc={doc} />
-              <PiiBadge doc={doc} />
-              <OcrBadge doc={doc} />
-              {doc.courseCode && (
-                <span className="inline-flex items-center gap-0.5 rounded bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
-                  <GraduationCap className="h-2.5 w-2.5" /> {doc.courseCode}
-                </span>
-              )}
-            </span>
+            <DocumentBadges doc={doc} format={format} />
           </span>
         </Link>
       </td>
-      <td className="whitespace-nowrap px-4 py-3 text-slate-600 dark:text-slate-300">{formatSize(doc.fileSize)}</td>
-      <td className="whitespace-nowrap px-4 py-3 text-slate-600 dark:text-slate-300">{formatDateTime(doc.uploadedAt)}</td>
+      <td className="whitespace-nowrap px-4 py-3 tabular-nums text-fg-secondary">{formatSize(doc.fileSize)}</td>
+      <td className="whitespace-nowrap px-4 py-3 tabular-nums text-fg-secondary">{formatDateTime(doc.uploadedAt)}</td>
       <td className="max-w-[200px] px-4 py-3">
-        <span className="block truncate text-slate-700 dark:text-slate-200" title={doc.ownerFullName}>{doc.ownerEmail}</span>
-        {doc.isOwner && <span className="mt-0.5 block text-xs text-indigo-600 dark:text-indigo-400">Вы</span>}
+        <span className="block truncate text-fg" title={doc.ownerFullName}>{doc.ownerEmail}</span>
+        {doc.isOwner && <span className="mt-0.5 block text-xs text-primary-fg">Вы</span>}
       </td>
       <td className="whitespace-nowrap px-4 py-3">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-200 dark:ring-emerald-500/30">
-          <Lock className="h-3 w-3" />
+        <span className={badgeClass('success', 'md')}>
+          <Lock aria-hidden="true" />
           {VISIBILITY_LABELS[doc.visibility] ?? doc.visibility}
         </span>
       </td>
       <td className="whitespace-nowrap px-4 py-3">
         <div className="flex justify-end gap-2">
-          <Link to={`/documents/${doc.id}`} className={`${actionClass} border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-700`}>
-            <Eye className="h-3.5 w-3.5" /> Открыть
+          <Link to={`/documents/${doc.id}`} className={`${actionClass} border-line-strong text-fg hover:border-primary hover:text-primary-fg`}>
+            <Eye className="h-3.5 w-3.5" aria-hidden="true" /> Открыть
           </Link>
           {doc.hasExtractedText && (
-            <Link to={`/documents/${doc.id}?tab=chat`} className={`${actionClass} border-violet-200 dark:border-violet-500/30 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-500/10`}>
-              <MessageSquareText className="h-3.5 w-3.5" /> Чат с ИИ
+            <Link to={`/documents/${doc.id}?tab=chat`} className={`${actionClass} border-primary/40 text-primary-fg hover:bg-primary-soft`}>
+              <MessageSquareText className="h-3.5 w-3.5" aria-hidden="true" /> Чат с ИИ
             </Link>
           )}
           {!isOriginalRestricted(doc) && (
-            <button type="button" onClick={() => onDownload(doc)} disabled={busy} className={`${actionClass} border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800`}>
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Скачать
+            <button type="button" onClick={() => onDownload(doc)} disabled={busy} className={`${actionClass} border-line-strong text-fg hover:bg-page-alt`}>
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Download className="h-3.5 w-3.5" aria-hidden="true" />} Скачать
             </button>
           )}
           {canDeleteDocument(doc) && (
             <ReclassifyButton doc={doc} onUpdated={(changes) => onUpdated(doc.id, changes)} />
           )}
           {canDeleteDocument(doc) && (
-            <button type="button" onClick={() => onDelete(doc)} disabled={busy} className={`${actionClass} border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10`}>
-              <Trash2 className="h-3.5 w-3.5" /> Удалить
+            <button type="button" onClick={() => onDelete(doc)} disabled={busy} className={`${actionClass} border-danger/40 text-danger-fg hover:bg-danger-soft`}>
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Удалить
             </button>
           )}
         </div>
@@ -302,45 +304,35 @@ function DocumentRow({ doc, busy, onDownload, onDelete, onUpdated }) {
   )
 }
 
-const iconActionClass = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-all duration-200 disabled:opacity-60'
+const iconActionClass = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-control border transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:opacity-60'
 
 function DocumentCard({ doc, busy, onDownload, onDelete, onUpdated }) {
   const format = getFileFormat(doc)
   const FormatIcon = format.icon
   return (
-    <li className="px-4 py-3">
-      <Link to={`/documents/${doc.id}`} className="group flex min-w-0 items-start gap-3 rounded-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100 dark:focus-visible:ring-indigo-500/30">
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${format.tile}`}>
+    <li className="px-4 py-4">
+      <Link to={`/documents/${doc.id}`} className="group flex min-w-0 items-start gap-3 rounded-control focus:outline-none focus-visible:ring-4 focus-visible:ring-ring">
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-control ${format.tile}`}>
           <FormatIcon className="h-4 w-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-slate-900 dark:text-white group-hover:text-indigo-700 dark:group-hover:text-indigo-300" title={doc.originalFileName}>
+          <span className="block truncate text-sm font-medium text-fg group-hover:text-primary-fg" title={doc.originalFileName}>
             {doc.originalFileName}
           </span>
-          <span className="mt-1 flex flex-wrap items-center gap-1">
-            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ring-1 ring-inset ${format.badge}`}>{format.label}</span>
-            <DocumentAiBadge doc={doc} />
-            <PiiBadge doc={doc} />
-            <OcrBadge doc={doc} />
-            {doc.courseCode && (
-              <span className="inline-flex items-center gap-0.5 rounded bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
-                <GraduationCap className="h-2.5 w-2.5" /> {doc.courseCode}
-              </span>
-            )}
-          </span>
-          <span className="mt-1 block truncate text-xs text-slate-600 dark:text-slate-300">
+          <DocumentBadges doc={doc} format={format} />
+          <span className="mt-1 block truncate text-xs tabular-nums text-fg-secondary">
             {formatDateTime(doc.uploadedAt)} · {formatSize(doc.fileSize)}
           </span>
         </span>
       </Link>
       <div className="mt-2 flex flex-wrap justify-end gap-2">
         {doc.hasExtractedText && (
-          <Link to={`/documents/${doc.id}?tab=chat`} aria-label="Чат с ИИ" title="Чат с ИИ" className={`${iconActionClass} border-violet-200 dark:border-violet-500/30 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-500/10`}>
+          <Link to={`/documents/${doc.id}?tab=chat`} aria-label="Чат с ИИ" title="Чат с ИИ" className={`${iconActionClass} border-primary/40 text-primary-fg hover:bg-primary-soft`}>
             <MessageSquareText className="h-4 w-4" />
           </Link>
         )}
         {!isOriginalRestricted(doc) && (
-          <button type="button" onClick={() => onDownload(doc)} disabled={busy} aria-label="Скачать" title="Скачать" className={`${iconActionClass} border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800`}>
+          <button type="button" onClick={() => onDownload(doc)} disabled={busy} aria-label="Скачать" title="Скачать" className={`${iconActionClass} border-line-strong text-fg hover:bg-page-alt`}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           </button>
         )}
@@ -348,7 +340,7 @@ function DocumentCard({ doc, busy, onDownload, onDelete, onUpdated }) {
           <ReclassifyButton doc={doc} onUpdated={(changes) => onUpdated(doc.id, changes)} compact />
         )}
         {canDeleteDocument(doc) && (
-          <button type="button" onClick={() => onDelete(doc)} disabled={busy} aria-label="Удалить" title="Удалить" className={`${iconActionClass} border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10`}>
+          <button type="button" onClick={() => onDelete(doc)} disabled={busy} aria-label="Удалить" title="Удалить" className={`${iconActionClass} border-danger/40 text-danger-fg hover:bg-danger-soft`}>
             <Trash2 className="h-4 w-4" />
           </button>
         )}

@@ -78,14 +78,14 @@ export default function AiChat({ endpoint, title, subtitle, placeholder, suggest
   }
 
   return (
-    <section className="flex h-[38rem] max-h-[80vh] flex-col overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-      <header className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-4">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-sm">
-          <Sparkles className="h-5 w-5" />
+    <section className="flex h-[38rem] max-h-[80vh] flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
+      <header className="flex items-center gap-3 border-b border-line-subtle px-5 py-4 sm:px-6">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-primary text-on-primary">
+          <Sparkles className="h-5 w-5" aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-white">{title}</h2>
-          <p className="truncate text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>
+          <h2 className="text-base font-semibold text-fg">{title}</h2>
+          <p className="truncate text-xs text-fg-muted">{subtitle}</p>
         </div>
       </header>
 
@@ -104,14 +104,14 @@ export default function AiChat({ endpoint, title, subtitle, placeholder, suggest
       </div>
 
       <form
-        className="border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-3 sm:p-4"
+        className="border-t border-line-subtle bg-page p-3 sm:p-4"
         onSubmit={(event) => {
           event.preventDefault()
           ask(question)
         }}
       >
         {blockedReason && messages.length > 0 && (
-          <p className="mb-2 flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+          <p className="mb-2 flex items-center gap-1.5 text-xs text-warning-fg">
             <AlertTriangle className="h-3.5 w-3.5" /> {blockedReason}
           </p>
         )}
@@ -124,18 +124,18 @@ export default function AiChat({ endpoint, title, subtitle, placeholder, suggest
             disabled={Boolean(blockedReason)}
             placeholder={blockedReason ? 'Чат недоступен' : placeholder}
             aria-label="Вопрос ИИ-ассистенту"
-            className="min-h-[2.75rem] flex-1 resize-none rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm text-slate-900 dark:text-white outline-none transition placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-[2.75rem] flex-1 resize-none rounded-xl border border-line-strong bg-surface px-3 py-2.5 text-sm text-fg outline-none transition placeholder:text-fg-muted focus:border-primary focus:ring-4 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
           />
           <button
             type="submit"
             disabled={loading || !question.trim() || Boolean(blockedReason)}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-200 dark:focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-on-primary shadow-soft transition hover:bg-primary-hover focus:outline-none focus:ring-4 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Отправить вопрос"
           >
             {loading ? <Loader2 className="h-4.5 w-4.5 animate-spin" /> : <SendHorizontal className="h-4.5 w-4.5" />}
           </button>
         </div>
-        <p className="mt-1.5 flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
+        <p className="mt-1.5 flex justify-between text-[11px] text-fg-muted">
           <span>Enter — отправить, Shift+Enter — новая строка</span>
           <span>{question.length}/{MAX_QUESTION_LENGTH}</span>
         </p>
@@ -148,20 +148,20 @@ function EmptyState({ blockedReason, suggestions, onPick }) {
   if (blockedReason) {
     return (
       <div className="mx-auto mt-8 flex max-w-sm flex-col items-center text-center">
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400">
+        <span className="flex h-12 w-12 items-center justify-center rounded-card bg-warning-soft text-warning">
           <AlertTriangle className="h-6 w-6" />
         </span>
-        <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">{blockedReason}</p>
+        <p className="mt-3 text-sm font-medium text-fg">{blockedReason}</p>
       </div>
     )
   }
   return (
     <div className="mx-auto mt-6 flex max-w-md flex-col items-center text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500">
+      <span className="flex h-12 w-12 items-center justify-center rounded-card bg-primary-soft text-primary-fg">
         <Bot className="h-6 w-6" />
       </span>
-      <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">Задайте вопрос по содержанию</p>
-      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mt-3 text-sm font-medium text-fg">Задайте вопрос по содержанию</p>
+      <p className="mt-1 text-xs text-fg-muted">
         ИИ отвечает только по тексту документов и указывает фрагменты-источники.
       </p>
       {suggestions.length > 0 && (
@@ -171,7 +171,7 @@ function EmptyState({ blockedReason, suggestions, onPick }) {
               key={suggestion}
               type="button"
               onClick={() => onPick(suggestion)}
-              className="rounded-full border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/60 dark:bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-700 dark:text-indigo-300 transition hover:bg-indigo-100 dark:hover:bg-indigo-500/20"
+              className="rounded-full border border-primary/30 bg-surface px-3 py-1.5 text-xs font-medium text-primary-fg transition hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring"
             >
               {suggestion}
             </button>
@@ -185,10 +185,10 @@ function EmptyState({ blockedReason, suggestions, onPick }) {
 function UserBubble({ text }) {
   return (
     <div className="flex justify-end gap-2">
-      <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-tr-sm bg-indigo-600 px-4 py-2.5 text-sm text-white shadow-sm">
+      <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-card rounded-tr-sm bg-primary px-4 py-2.5 text-sm text-on-primary shadow-card">
         {text}
       </p>
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-fg">
         <User className="h-4 w-4" />
       </span>
     </div>
@@ -197,8 +197,8 @@ function UserBubble({ text }) {
 
 function AssistantAvatar() {
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-indigo-600 text-white">
-      <Bot className="h-4 w-4" />
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary">
+      <Bot className="h-4 w-4" aria-hidden="true" />
     </span>
   )
 }
@@ -207,14 +207,14 @@ function ThinkingBubble() {
   return (
     <div className="flex gap-2" role="status">
       <AssistantAvatar />
-      <div className="w-full max-w-[85%] rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
-        <p className="flex items-center gap-2 text-xs font-medium text-indigo-600 dark:text-indigo-300">
+      <div className="w-full max-w-[85%] rounded-card rounded-tl-sm border border-line bg-page-alt px-4 py-3">
+        <p className="flex items-center gap-2 text-xs font-medium text-primary-fg">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> ИИ ищет ответ в документах…
         </p>
-        <div className="mt-3 space-y-2 animate-pulse">
-          <div className="h-2.5 w-11/12 rounded bg-slate-200 dark:bg-slate-700" />
-          <div className="h-2.5 w-4/5 rounded bg-slate-200 dark:bg-slate-700" />
-          <div className="h-2.5 w-2/3 rounded bg-slate-200 dark:bg-slate-700" />
+        <div className="mt-3 space-y-2" aria-hidden="true">
+          <div className="skeleton animate-shimmer h-2.5 w-11/12 rounded" />
+          <div className="skeleton animate-shimmer h-2.5 w-4/5 rounded" />
+          <div className="skeleton animate-shimmer h-2.5 w-2/3 rounded" />
         </div>
       </div>
     </div>
@@ -225,7 +225,7 @@ function ErrorBubble({ text, onRetry }) {
   return (
     <div className="flex gap-2">
       <AssistantAvatar />
-      <div role="alert" className="max-w-[85%] rounded-2xl rounded-tl-sm border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-2.5 text-sm text-amber-800 dark:text-amber-200">
+      <div role="alert" className="max-w-[85%] rounded-card rounded-tl-sm border border-warning/30 bg-warning-soft px-4 py-2.5 text-sm text-warning-fg">
         <p className="flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {text}
         </p>
@@ -233,7 +233,7 @@ function ErrorBubble({ text, onRetry }) {
           <button
             type="button"
             onClick={onRetry}
-            className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary-fg hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             <RotateCw className="h-3.5 w-3.5" /> Повторить
           </button>
@@ -254,10 +254,10 @@ function AnswerBubble({ message, showDocuments }) {
     <div className="flex gap-2">
       <AssistantAvatar />
       <div className="min-w-0 max-w-[85%] flex-1">
-        <div className={`rounded-2xl rounded-tl-sm border px-4 py-2.5 text-sm leading-6 ${
+        <div className={`rounded-card rounded-tl-sm border px-4 py-2.5 text-sm leading-6 ${
           message.hasAnswer
-            ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-800 dark:text-slate-100'
-            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 italic text-slate-500 dark:text-slate-400'
+            ? 'border-line bg-page-alt text-fg'
+            : 'border-line bg-surface italic text-fg-muted'
         }`}
         >
           <p className="whitespace-pre-wrap break-words">
@@ -266,7 +266,7 @@ function AnswerBubble({ message, showDocuments }) {
         </div>
         {sources.length > 0 && (
           <div className="mt-2 space-y-1.5">
-            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
               <Quote className="h-3 w-3" /> Источники ({sources.length})
             </p>
             {sources.map((source) => (
@@ -301,7 +301,7 @@ function AnswerText({ text, sources, onCite }) {
             key={number}
             type="button"
             onClick={() => onCite(number)}
-            className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-indigo-100 dark:bg-indigo-500/20 px-1 align-text-top text-[11px] font-bold not-italic text-indigo-700 dark:text-indigo-300 transition hover:bg-indigo-200 dark:hover:bg-indigo-500/30"
+            className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-primary-soft px-1 align-text-top text-[11px] font-bold not-italic text-primary-fg transition hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             title={`Показать фрагмент ${number}`}
           >
             {number}
@@ -333,7 +333,7 @@ function highlight(text, pattern) {
   let last = 0
   for (const match of text.matchAll(pattern)) {
     parts.push(text.slice(last, match.index))
-    parts.push(<mark key={match.index} className="rounded bg-amber-200/80 dark:bg-amber-400/30 px-0.5 text-inherit">{match[0]}</mark>)
+    parts.push(<mark key={match.index} className="rounded bg-warning-soft px-0.5 text-inherit ring-1 ring-warning/30">{match[0]}</mark>)
     last = match.index + match[0].length
   }
   parts.push(text.slice(last))
@@ -363,8 +363,8 @@ function SourceCard({ source, open, onToggle, showDocument, termPattern }) {
   return (
     <div className={`overflow-hidden rounded-xl border transition ${
       open
-        ? 'border-indigo-300 dark:border-indigo-500/50 bg-indigo-50/50 dark:bg-indigo-500/10'
-        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+        ? 'border-primary bg-primary-soft'
+        : 'border-line bg-surface'
     }`}
     >
       <button
@@ -373,34 +373,34 @@ function SourceCard({ source, open, onToggle, showDocument, termPattern }) {
         aria-expanded={open}
         className="flex w-full items-start gap-2.5 px-3 py-2 text-left"
       >
-        <span className="mt-0.5 flex h-5 min-w-5 items-center justify-center rounded-md bg-indigo-600 px-1 text-[11px] font-bold text-white">
+        <span className="mt-0.5 flex h-5 min-w-5 items-center justify-center rounded-md bg-primary px-1 text-[11px] font-bold text-on-primary">
           {source.fragment}
         </span>
         <span className="min-w-0 flex-1">
           {showDocument && (
-            <span className="mb-0.5 flex items-center gap-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+            <span className="mb-0.5 flex items-center gap-1 text-xs font-semibold text-fg">
               <FileText className="h-3 w-3 shrink-0" />
               <span className="truncate">{source.documentName}</span>
-              <span className="shrink-0 font-normal text-slate-500 dark:text-slate-400">· ID {source.documentId}</span>
+              <span className="shrink-0 font-normal text-fg-muted">· ID {source.documentId}</span>
             </span>
           )}
-          {!open && <span className="line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{highlight(preview, termPattern)}</span>}
-          <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
+          {!open && <span className="line-clamp-2 text-xs text-fg-muted">{highlight(preview, termPattern)}</span>}
+          <span className="mt-0.5 block text-[11px] text-fg-muted">
             Фрагмент №{source.chunkIndex + 1} · символы {source.startOffset.toLocaleString('ru-RU')}–{source.endOffset.toLocaleString('ru-RU')}
           </span>
         </span>
-        <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-fg-muted transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="border-t border-indigo-100 dark:border-indigo-500/20 px-3 py-2.5">
-          <blockquote ref={quoteRef} className="relative max-h-56 overflow-y-auto whitespace-pre-wrap border-l-2 border-indigo-400 pl-3 text-xs leading-5 text-slate-700 dark:text-slate-200">
+        <div className="border-t border-primary/25 px-3 py-2.5">
+          <blockquote ref={quoteRef} className="relative max-h-56 overflow-y-auto whitespace-pre-wrap border-l-2 border-primary pl-3 text-xs leading-5 text-fg">
             {highlight(source.text, termPattern)}
           </blockquote>
           {showDocument && (
             <Link
               to={`/documents/${source.documentId}`}
               state={{ from: location.pathname }}
-              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary-fg hover:underline"
             >
               Открыть документ <FileText className="h-3 w-3" />
             </Link>

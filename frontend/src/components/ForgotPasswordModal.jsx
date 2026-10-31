@@ -1,10 +1,10 @@
-import { useEffect, useId, useRef, useState } from 'react'
-import { ArrowLeft, KeyRound, Lock, Mail, RotateCw, ShieldCheck, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowLeft, KeyRound, Lock, Mail, RotateCw, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { getErrorMessage } from '../api/axios'
 import { Alert, OtpInput, SubmitButton, TextField } from './FormControls'
 import { emptyOtp } from '../constants/otp'
-import useDialogFocus from '../hooks/useDialogFocus'
+import Dialog from './ui/Dialog'
 
 const RESEND_COOLDOWN_SECONDS = 60
 const STEPS = [
@@ -28,10 +28,7 @@ export default function ForgotPasswordModal({ initialEmail = '', onClose, onSucc
 
   const otpValue = otp.join('')
 
-  const titleId = useId()
-  const dialogRef = useRef(null)
-  // Escape and the backdrop do not close it while a request is running.
-  useDialogFocus(dialogRef, { onClose, busy: loading })
+  // Escape and the backdrop do not close it while a request is running (Dialog's busy); the × button still does.
 
   useEffect(() => {
     if (cooldown <= 0) return undefined
@@ -104,52 +101,30 @@ export default function ForgotPasswordModal({ initialEmail = '', onClose, onSucc
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !loading) onClose()
-      }}
+    <Dialog
+      title="Восстановление пароля"
+      subtitle={`Шаг ${step + 1} из ${STEPS.length}`}
+      onClose={onClose}
+      busy={loading}
+      closeDisabled={false}
+      zIndex="z-50"
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-2xl"
-      >
-        <div className="mb-5 flex items-start justify-between">
-          <div>
-            <h2 id={titleId} className="text-lg font-semibold text-slate-900 dark:text-white">
-              Восстановление пароля
-            </h2>
-            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Шаг {step + 1} из {STEPS.length}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300"
-            aria-label="Закрыть"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <ol className="mb-6 flex items-center gap-2">
+        <ol className="mb-6 mt-5 flex items-center gap-2">
           {STEPS.map(({ title, icon: Icon }, index) => (
             <li key={title} className="flex flex-1 items-center gap-2">
               <span
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm transition ${
-                  index <= step ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                  index <= step ? 'bg-primary text-on-primary' : 'bg-page-alt text-fg-muted'
                 }`}
+                aria-current={index === step ? 'step' : undefined}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-4 w-4" aria-hidden="true" />
               </span>
-              <span className={`text-xs font-medium ${index <= step ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
+              <span className={`text-xs font-medium ${index <= step ? 'text-fg' : 'text-fg-muted'}`}>
                 {title}
               </span>
               {index < STEPS.length - 1 && (
-                <span className={`h-px flex-1 ${index < step ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                <span className={`h-px flex-1 ${index < step ? 'bg-primary' : 'bg-line'}`} />
               )}
             </li>
           ))}
@@ -161,7 +136,7 @@ export default function ForgotPasswordModal({ initialEmail = '', onClose, onSucc
 
           {step === 0 && (
             <form onSubmit={handleEmailSubmit} className="space-y-4" noValidate>
-              <p className="text-sm text-slate-600 dark:text-slate-300">
+              <p className="text-sm text-fg-secondary">
                 Укажите email, привязанный к аккаунту. Мы отправим на него код подтверждения.
               </p>
               <TextField
@@ -181,8 +156,8 @@ export default function ForgotPasswordModal({ initialEmail = '', onClose, onSucc
 
           {step === 1 && (
             <form onSubmit={handleOtpSubmit} className="space-y-4" noValidate>
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                Введите 6-значный код из письма, отправленного на <b className="text-slate-900 dark:text-white">{email}</b>.
+              <p className="text-sm text-fg-secondary">
+                Введите 6-значный код из письма, отправленного на <b className="text-fg">{email}</b>.
               </p>
               <OtpInput value={otp} onChange={setOtp} autoFocus />
               <SubmitButton loading={loading}>Подтвердить код</SubmitButton>
@@ -190,17 +165,17 @@ export default function ForgotPasswordModal({ initialEmail = '', onClose, onSucc
                 <button
                   type="button"
                   onClick={goBack}
-                  className="flex items-center gap-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  className="flex items-center gap-1 rounded-sm text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
-                  <ArrowLeft className="h-4 w-4" /> Изменить email
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Изменить email
                 </button>
                 <button
                   type="button"
                   onClick={requestCode}
                   disabled={cooldown > 0 || loading}
-                  className="flex items-center gap-1 font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 disabled:cursor-not-allowed disabled:text-slate-400 dark:disabled:text-slate-500"
+                  className="flex items-center gap-1 rounded-sm font-medium tabular-nums text-primary-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:text-fg-muted disabled:no-underline"
                 >
-                  <RotateCw className="h-4 w-4" />
+                  <RotateCw className="h-4 w-4" aria-hidden="true" />
                   {cooldown > 0 ? `Повторить через ${cooldown} с` : 'Отправить снова'}
                 </button>
               </div>
@@ -233,7 +208,6 @@ export default function ForgotPasswordModal({ initialEmail = '', onClose, onSucc
             </form>
           )}
         </div>
-      </div>
-    </div>
+    </Dialog>
   )
 }

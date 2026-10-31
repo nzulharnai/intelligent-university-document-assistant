@@ -10,9 +10,10 @@ function getInitialTheme() {
     const saved = localStorage.getItem(THEME_KEY)
     if (saved === 'light' || saved === 'dark') return saved
   } catch {
-    // Storage can be unavailable (private mode, blocked site data): fall back to the system preference.
+    // Storage can be unavailable (private mode, blocked site data): fall back to the default.
   }
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  // New users start in the light theme; the toggle saves their choice.
+  return 'light'
 }
 
 export function ThemeProvider({ children }) {

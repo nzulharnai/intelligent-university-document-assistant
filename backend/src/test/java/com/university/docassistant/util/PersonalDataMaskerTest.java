@@ -5,6 +5,8 @@ import com.university.docassistant.util.PersonalDataMasker.PiiType;
 import com.university.docassistant.util.PersonalDataMasker.Result;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -59,6 +61,63 @@ class PersonalDataMaskerTest {
             assertThat(PersonalDataMasker.isValidIin("990101300014")).isFalse(); // wrong control digit
             assertThat(PersonalDataMasker.isValidIin("991301300013")).isFalse(); // month 13
             assertThat(PersonalDataMasker.isValidIin("990101900013")).isFalse(); // century digit 9
+        }
+    }
+
+    /** Review fix: an IIN written in groups, 6+6 or 4+4+4 digits with one space or dash between them. */
+    @Nested
+    class GroupedIin {
+
+        @Test
+        void validIinInGroupsIsMasked() {
+            assertThat(mask("ИИН 990101 300013, группа CS-21")).isEqualTo("ИИН [ИИН скрыт], группа CS-21");
+            assertThat(mask("Иванов А. 990101-300013")).isEqualTo("Иванов А. [ИИН скрыт]");
+            assertThat(mask("Иванов А. 9901 0130 0013.")).isEqualTo("Иванов А. [ИИН скрыт].");
+            assertThat(mask("(0503-1550-1230)")).isEqualTo("([ИИН скрыт])");
+        }
+
+        @Test
+        void labelledGroupsAreMaskedEvenWithATypo() {
+            assertThat(mask("ЖСН: 9901 0130 0019")).isEqualTo("ЖСН: [ИИН скрыт]");
+            assertThat(mask("IIN 990101-300019")).isEqualTo("IIN [ИИН скрыт]");
+        }
+
+        @Test
+        void datesAndYearsAreNotIins() {
+            for (String text : List.of("Учебный год 2024 2025 2026", "2025-2026-2027 гг.", "Сессия 202512 202601",
+                    "с 01-09-2024 по 31-12-2024", "Период 2024-09 2025-05")) {
+                assertThat(mask(text)).as(text).isEqualTo(text);
+            }
+        }
+
+        @Test
+        void phoneNumbersAreNotIinsAndStayPhones() {
+            assertThat(mask("тел. +7 7011 2345 67")).isEqualTo("тел. [телефон скрыт]");
+            assertThat(mask("8 701 123 45 67")).isEqualTo("[телефон скрыт]");
+            assertThat(mask("+7 701123 456789")).doesNotContain("[ИИН скрыт]");
+        }
+
+        @Test
+        void orderAndDocumentNumbersAreNotIins() {
+            // A valid IIN checksum and date, but explicitly an order / registration number.
+            for (String text : List.of("Приказ № 9901 0130 0013 от 12.10.2026", "Договор No. 990101-300013",
+                    "регистрационный номер 990101 300013")) {
+                assertThat(mask(text)).as(text).isEqualTo(text);
+            }
+            assertThat(mask("Номер заказа 1234 5678 9012")).isEqualTo("Номер заказа 1234 5678 9012"); // bad checksum
+        }
+
+        @Test
+        void longerDigitGroupsAndMixedSeparatorsAreLeftAlone() {
+            for (String text : List.of("Карта 9901 0130 0013 4567", "1 990101 300013", "9901 0130-0013",
+                    "990101  300013", "Счёт 990101-300013-7")) {
+                assertThat(mask(text)).as(text).isEqualTo(text);
+            }
+        }
+
+        @Test
+        void maskerVersionWasBumpedSoStoredTextsAreMaskedAgain() {
+            assertThat(PersonalDataMasker.VERSION).isGreaterThanOrEqualTo(2);
         }
     }
 

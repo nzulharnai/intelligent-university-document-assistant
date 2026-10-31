@@ -104,6 +104,7 @@ export const CODE_MESSAGES = {
   OTP_ATTEMPTS_EXCEEDED: 'Слишком много неудачных попыток. Запросите новый код.',
   PASSWORD_UNCHANGED: 'Новый пароль должен отличаться от текущего',
   ACCOUNT_NOT_FOUND: 'Аккаунт больше не существует. Войдите снова.',
+  PHONE_INVALID: 'Телефон должен содержать от 10 до 15 цифр; можно использовать пробелы, дефисы, скобки и + в начале.',
   ACCOUNT_DISABLED: 'Аккаунт заблокирован.',
   AUTHENTICATION_FAILED: 'Не удалось войти. Попробуйте ещё раз.',
   AUTHENTICATION_REQUIRED: 'Сессия истекла. Войдите снова.',
@@ -145,6 +146,14 @@ export const CODE_MESSAGES = {
   // Tasks and submissions
   TASK_NOT_OWN: 'Можно менять только свои задачи',
   TASK_NOT_SUBMITTABLE: 'К этой задаче нельзя прикрепить решение.',
+  // The server's text names the deadline.
+  SUBMISSION_DEADLINE_PASSED: (data) => data?.message || 'Срок сдачи истёк, задание не принимает работы после срока.',
+  SUBMISSION_ALREADY_GRADED: 'Работа уже оценена, сдать её заново нельзя.',
+  TASK_NOT_GRADABLE: 'Оценить можно только задачу задания курса.',
+  // The server's text names the allowed range.
+  GRADE_SCORE_INVALID: (data) => data?.message || 'Недопустимая оценка.',
+  NOTIFICATION_NOT_FOUND: 'Уведомление не найдено.',
+  TASK_STATUS_SYSTEM_ONLY: 'Статусы «Сдано» и «Оценено» ставятся автоматически: сдайте файлы решения, а оценку выставит преподаватель.',
   // Uploads
   UPLOAD_FORBIDDEN: localized('Загружать документы курса может только его преподаватель или деканат.'),
   UPLOAD_EMPTY: localized('Файл пустой'),

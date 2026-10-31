@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, BookOpen, GraduationCap, Loader2, Plus, Search } from 'lucide-react'
+import { ArrowRight, BookOpen, GraduationCap, Plus, Search, UserRound } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { ROLE_ADMIN, ROLE_STUDENT } from '../constants/roles'
 import Navbar from '../components/Navbar'
+import Button from '../components/ui/Button'
+import EmptyState from '../components/ui/EmptyState'
+import PageHeader from '../components/ui/PageHeader'
+import Skeleton from '../components/ui/Skeleton'
+import { cardClass, controlClass as inputClass } from '../components/ui/styles'
 
 const PAGE_SIZE = 12
-const inputClass = 'w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white outline-none transition placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-500/30'
 
 /** "My courses": enrolled ones for a student, taught ones for a teacher, all for ADMIN (GET /courses). */
 export default function CoursesPage() {
@@ -45,49 +49,38 @@ export default function CoursesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950">
+    <div className="min-h-screen bg-page">
       <Navbar />
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300">
-            <GraduationCap className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Курсы</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              {isStudent ? 'Курсы, на которые вы записаны' : role === ROLE_ADMIN ? 'Все курсы системы' : 'Курсы, которые вы ведёте'}
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          icon={GraduationCap}
+          title="Курсы"
+          subtitle={isStudent ? 'Курсы, на которые вы записаны' : role === ROLE_ADMIN ? 'Все курсы системы' : 'Курсы, которые вы ведёте'}
+        />
 
-        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <section>
+        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <section aria-label="Список курсов">
             {!page && loading ? (
-              <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500 dark:text-slate-400">
-                <Loader2 className="h-4 w-4 animate-spin" /> Загрузка курсов…
+              <div role="status" className="grid gap-4 sm:grid-cols-2">
+                <span className="sr-only">Загрузка курсов…</span>
+                {[0, 1, 2, 3].map((index) => <Skeleton key={index} className="h-36 w-full" rounded="rounded-card" />)}
               </div>
             ) : page?.content.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-14 text-center">
-                <BookOpen className="mx-auto h-8 w-8 text-slate-400" />
-                <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">Курсов пока нет</p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  {isStudent ? 'Попросите преподавателя прислать ссылку-приглашение и откройте её или вставьте в форму справа.' : 'Создайте первый курс в форме справа.'}
-                </p>
-              </div>
+              <EmptyState
+                icon={BookOpen}
+                title="Курсов пока нет"
+                description={isStudent ? 'Попросите преподавателя прислать ссылку-приглашение и откройте её или вставьте в форму справа.' : 'Создайте первый курс в форме справа.'}
+                className="bg-surface"
+              />
             ) : page && (
               <>
-                <ul className="grid gap-3 sm:grid-cols-2">
+                <ul className="grid gap-4 sm:grid-cols-2">
                   {page.content.map((course) => <CourseCard key={course.id} course={course} showNumber={role === ROLE_ADMIN} />)}
                 </ul>
                 {!page.last && (
-                  <button
-                    type="button"
-                    onClick={loadMore}
-                    disabled={loading}
-                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60"
-                  >
-                    {loading && <Loader2 className="h-4 w-4 animate-spin" />} Показать ещё
-                  </button>
+                  <Button variant="outline" onClick={loadMore} loading={loading} className="mt-4 w-full">
+                    Показать ещё
+                  </Button>
                 )}
               </>
             )}
@@ -107,19 +100,23 @@ function CourseCard({ course, showNumber }) {
     <li>
       <Link
         to={`/courses/${course.id}`}
-        className="group flex h-full flex-col rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-200 dark:hover:border-indigo-500/30 hover:shadow-md"
+        className="group relative flex h-full flex-col overflow-hidden rounded-card border border-line bg-surface p-5 pt-6 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-card focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring motion-reduce:hover:translate-y-0"
       >
+        <span className="absolute inset-x-0 top-0 h-1 bg-primary" aria-hidden="true" />
         <span className="flex items-center gap-2">
           {course.code && (
-            <span className="rounded-md bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">{course.code}</span>
+            <span className="rounded-md bg-primary-soft px-1.5 py-0.5 text-xs font-bold tabular-nums text-primary-fg">{course.code}</span>
           )}
-          {showNumber && <span className="text-xs text-slate-500 dark:text-slate-400">№ {course.id}</span>}
+          {showNumber && <span className="text-xs tabular-nums text-fg-muted">№ {course.id}</span>}
         </span>
-        <span className="mt-2 font-semibold text-slate-900 dark:text-white">{course.title}</span>
-        {course.description && <span className="mt-1 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{course.description}</span>}
-        <span className="mt-auto flex items-center justify-between pt-3 text-xs text-slate-500 dark:text-slate-400">
-          {course.teacherFullName || course.teacherEmail || 'Преподаватель не назначен'}
-          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1 group-hover:text-indigo-600" />
+        <span className="mt-2.5 text-base font-semibold leading-6 text-fg">{course.title}</span>
+        {course.description && <span className="mt-1 line-clamp-2 text-small text-fg-muted">{course.description}</span>}
+        <span className="mt-auto flex items-center justify-between gap-2 border-t border-line-subtle pt-3 text-small text-fg-secondary">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <UserRound className="h-3.5 w-3.5 shrink-0 text-fg-muted" aria-hidden="true" />
+            <span className="truncate">{course.teacherFullName || course.teacherEmail || 'Преподаватель не назначен'}</span>
+          </span>
+          <ArrowRight className="h-4 w-4 shrink-0 text-fg-muted transition-transform group-hover:translate-x-1 group-hover:text-primary" aria-hidden="true" />
         </span>
       </Link>
     </li>
@@ -152,21 +149,17 @@ function CreateCourseForm() {
   const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }))
 
   return (
-    <form onSubmit={submit} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-        <Plus className="h-4 w-4 text-indigo-600" /> Новый курс
+    <form onSubmit={submit} className={`${cardClass} p-5`}>
+      <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+        <Plus className="h-4.5 w-4.5 text-primary" aria-hidden="true" /> Новый курс
       </h2>
-      <div className="mt-3 space-y-3">
+      <div className="mt-4 space-y-3">
         <input value={form.title} onChange={update('title')} required maxLength={255} placeholder="Название, например «Алгоритмы»" className={inputClass} aria-label="Название курса" />
         <input value={form.code} onChange={update('code')} maxLength={50} placeholder="Код, например CS101" className={inputClass} aria-label="Код курса" />
         <textarea value={form.description} onChange={update('description')} rows={3} maxLength={10000} placeholder="Описание (необязательно)" className={`${inputClass} resize-none`} aria-label="Описание курса" />
-        <button
-          type="submit"
-          disabled={saving || !form.title.trim()}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
-        >
-          {saving && <Loader2 className="h-4 w-4 animate-spin" />} Создать курс
-        </button>
+        <Button type="submit" loading={saving} disabled={!form.title.trim()} className="w-full">
+          Создать курс
+        </Button>
       </div>
     </form>
   )
@@ -191,12 +184,12 @@ function JoinByLinkForm() {
         event.preventDefault()
         if (code) navigate(`/join/${encodeURIComponent(code)}`)
       }}
-      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"
+      className={`${cardClass} p-5`}
     >
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-        <Search className="h-4 w-4 text-indigo-600" /> Записаться на курс
+      <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+        <Search className="h-4.5 w-4.5 text-primary" aria-hidden="true" /> Записаться на курс
       </h2>
-      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mt-1 text-small text-fg-muted">
         Откройте ссылку-приглашение от преподавателя или вставьте её сюда.
       </p>
       <div className="mt-3 flex gap-2">
@@ -207,9 +200,9 @@ function JoinByLinkForm() {
           className={inputClass}
           aria-label="Ссылка-приглашение"
         />
-        <button type="submit" disabled={!code} className="rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60">
+        <Button type="submit" disabled={!code}>
           Записаться
-        </button>
+        </Button>
       </div>
     </form>
   )

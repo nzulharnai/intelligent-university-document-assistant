@@ -145,7 +145,7 @@ class AssignmentDuplicateTest {
                 .duplicateOf(Assignment.builder().id(5L).build()).build();
         when(assignments.findById(1L)).thenReturn(Optional.of(draft));
         when(assignments.findViewById(1L)).thenReturn(Optional.of(new AssignmentResponse(1L, "Лаб. 1", null, null,
-                AssignmentStatus.DRAFT, 10L, "Algorithms", null, null, null, null, null, null, null)));
+                AssignmentStatus.DRAFT, 10L, "Algorithms", null, null, null, null, null, null, null, false, true, null)));
 
         service(false).notDuplicate(1L, "teacher@uni.kz");
 

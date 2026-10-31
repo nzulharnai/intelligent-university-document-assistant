@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
-import { CalendarClock, Loader2 } from 'lucide-react'
+import { CalendarCheck, CalendarClock } from 'lucide-react'
 import api, { describeError } from '../api/axios'
 import ErrorState from './ErrorState'
 import TaskItem from './TaskItem'
+import EmptyState from './ui/EmptyState'
+import Skeleton from './ui/Skeleton'
+import { isTaskFinished } from '../utils/tasks'
 
 /**
  * "Upcoming Deadlines": the student's unfinished tasks due from now on, nearest first (GET /tasks/upcoming).
@@ -30,12 +33,12 @@ export default function UpcomingDeadlines({ limit = 5, refreshKey = 0, statusOve
 
   const visible = (tasks ?? [])
     .map((task) => (statusOverrides[task.id] ? { ...task, status: statusOverrides[task.id] } : task))
-    .filter((task) => task.status !== 'COMPLETED')
+    .filter((task) => !isTaskFinished(task.status))
 
   return (
-    <section className="rounded-2xl border border-amber-200/70 dark:border-amber-500/30 bg-white dark:bg-slate-900 p-5 shadow-sm">
-      <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-white">
-        <CalendarClock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+    <section className="rounded-card border border-line bg-surface p-5 shadow-card sm:p-6">
+      <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+        <CalendarClock className="h-5 w-5 text-warning" aria-hidden="true" />
         Ближайшие дедлайны
       </h2>
       {error ? (
@@ -49,13 +52,12 @@ export default function UpcomingDeadlines({ limit = 5, refreshKey = 0, statusOve
           }}
         />
       ) : tasks === null ? (
-        <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500 dark:text-slate-400">
-          <Loader2 className="h-4 w-4 animate-spin" /> Загрузка…
+<div role="status" className="mt-4 space-y-2">
+          <span className="sr-only">Загрузка…</span>
+          {[0, 1, 2].map((index) => <Skeleton key={index} className="h-20 w-full" rounded="rounded-card" />)}
         </div>
       ) : visible.length === 0 ? (
-        <p className="mt-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
-          Предстоящих дедлайнов нет.
-        </p>
+        <EmptyState compact icon={CalendarCheck} title="Предстоящих дедлайнов нет." className="mt-4" />
       ) : (
         <ul className="mt-4 space-y-2">
           {visible.map((task) => <TaskItem key={task.id} task={task} showDocument />)}

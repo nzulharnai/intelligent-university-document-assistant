@@ -12,7 +12,7 @@ import DocumentAiBadge from '../components/DocumentAiBadge'
 import ReclassifyButton from '../components/ReclassifyButton'
 import { VISIBILITY_LABELS } from '../constants/documents'
 import { canDeleteDocument, formatSize, getFileFormat } from '../utils/fileTypes'
-import { isOriginalRestricted } from '../utils/privacy'
+import { hasProtectedOriginal, isOriginalRestricted, isPiiUnknown } from '../utils/privacy'
 import DocumentTextPanel from '../components/DocumentTextPanel'
 import PiiBadge from '../components/PiiBadge'
 import SetCategoryDialog from '../components/SetCategoryDialog'
@@ -21,6 +21,8 @@ import { formatDateTime } from '../utils/dates'
 import { safeInternalPath } from '../utils/postLoginRedirect'
 import useDocumentStatus from '../hooks/useDocumentStatus'
 import { isClassifying, withLiveStatus } from '../utils/documentStatus'
+import Skeleton, { SkeletonLines } from '../components/ui/Skeleton'
+import { badgeClass } from '../components/ui/styles'
 
 const TABS = [
   { id: 'preview', label: 'Просмотр', icon: Eye },
@@ -111,18 +113,26 @@ export default function DocumentPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950">
+    <div className="min-h-screen bg-page">
       <Navbar />
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
-        <Link to={back.to} className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
-          <ArrowLeft className="h-4 w-4" /> {back.label}
+        <Link to={back.to} className="inline-flex items-center gap-1.5 rounded-sm text-sm font-medium text-fg-muted hover:text-primary-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> {back.label}
         </Link>
 
         {error ? (
           <OpenError error={error} onRetry={retry} />
         ) : !doc ? (
-          <div className="flex items-center justify-center gap-2 py-24 text-sm text-slate-500 dark:text-slate-400">
-            <Loader2 className="h-4 w-4 animate-spin" /> Загрузка документа…
+          <div role="status" className="mt-4 space-y-6">
+            <span className="sr-only">Загрузка документа…</span>
+            <div className="flex gap-4 rounded-card border border-line bg-surface p-6 shadow-card">
+              <Skeleton className="h-12 w-12 shrink-0" rounded="rounded-control" />
+              <div className="flex-1">
+                <Skeleton className="h-7 w-2/3" />
+                <SkeletonLines lines={2} className="mt-4" />
+              </div>
+            </div>
+            <Skeleton className="h-[50vh] w-full" rounded="rounded-card" />
           </div>
         ) : (
           <>
@@ -134,7 +144,7 @@ export default function DocumentPage() {
               onUpdated={(changes) => setDoc((current) => ({ ...current, ...changes }))}
             />
 
-            <div className="mt-6 flex gap-1 overflow-x-auto rounded-xl bg-slate-100 dark:bg-slate-800/70 p-1" role="tablist">
+            <div className="mt-8 flex gap-1 overflow-x-auto rounded-control border border-line bg-page-alt p-1" role="tablist">
               {TABS.map(({ id: tabId, label, icon: Icon }) => (
                 <button
                   key={tabId}
@@ -142,18 +152,18 @@ export default function DocumentPage() {
                   role="tab"
                   aria-selected={tab === tabId}
                   onClick={() => openTab(tabId)}
-                  className={`flex shrink-0 items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition ${
+                  className={`flex shrink-0 items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     tab === tabId
-                      ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      ? 'bg-surface text-primary-fg shadow-soft ring-1 ring-line'
+                      : 'text-fg-secondary hover:bg-surface/60 hover:text-fg'
                   }`}
                 >
-                  <Icon className="h-4 w-4" /> {label}
+                  <Icon className="h-4 w-4" aria-hidden="true" /> {label}
                 </button>
               ))}
             </div>
 
-            <div className="mt-5" role="tabpanel">
+            <div className="mt-6" role="tabpanel">
               {tab === 'preview' && <DocumentPreview doc={liveDoc} onShowText={() => openTab('text')} />}
               {tab === 'text' && <DocumentTextPanel doc={liveDoc} />}
               {tab === 'analysis' && <AnalysisPanel doc={liveDoc} />}
@@ -170,40 +180,41 @@ export default function DocumentPage() {
 function DocumentHeader({ doc, busy, onDownload, onDelete, onUpdated }) {
   const format = getFileFormat(doc)
   const FormatIcon = format.icon
-  const badge = 'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset'
-
   return (
-    <section className="mt-4 flex flex-col gap-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm sm:flex-row sm:items-start">
-      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${format.tile}`}>
-        <FormatIcon className="h-6 w-6" />
+    <section className="mt-4 flex flex-col gap-5 rounded-card border border-line bg-surface p-5 shadow-card sm:p-6 lg:flex-row lg:items-start">
+      <span className={`hidden h-12 w-12 shrink-0 items-center justify-center rounded-control sm:flex ${format.tile}`}>
+        <FormatIcon className="h-6 w-6" aria-hidden="true" />
       </span>
       <div className="min-w-0 flex-1">
-        <h1 className="break-words text-xl font-bold text-slate-900 dark:text-white">{doc.originalFileName}</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <h1 className="break-words text-[1.375rem] leading-8 font-semibold text-fg sm:text-title">{doc.originalFileName}</h1>
+        <p className="mt-1 text-sm tabular-nums text-fg-muted">
           {formatSize(doc.fileSize)} · {formatDateTime(doc.uploadedAt)} · {doc.ownerFullName || doc.ownerEmail}
-          {doc.isOwner && <span className="text-indigo-600 dark:text-indigo-400"> (вы)</span>}
+          {doc.isOwner && <span className="text-primary-fg"> (вы)</span>}
         </p>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          <span className={`${badge} font-bold ${format.badge}`}>{format.label}</span>
-          <span className="inline-flex items-center"><DocumentAiBadge doc={doc} /></span>
-          <span className={`${badge} bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-emerald-200 dark:ring-emerald-500/30`}>
-            <LockKeyhole className="h-3 w-3" /> {VISIBILITY_LABELS[doc.visibility] ?? doc.visibility}
+        <div className="mt-4 flex flex-wrap items-center gap-1.5">
+          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold leading-5 ring-1 ring-inset ${format.badge}`}>{format.label}</span>
+          <DocumentAiBadge doc={doc} />
+          <span className={badgeClass('success', 'md')}>
+            <LockKeyhole aria-hidden="true" /> {VISIBILITY_LABELS[doc.visibility] ?? doc.visibility}
           </span>
           {doc.courseId && (
-            <Link to={`/courses/${doc.courseId}`} className={`${badge} bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 ring-indigo-200 dark:ring-indigo-500/30 hover:bg-indigo-100`}>
-              <GraduationCap className="h-3 w-3" /> {doc.courseCode ? `${doc.courseCode} · ` : ''}{doc.courseTitle}
+            <Link
+              to={`/courses/${doc.courseId}`}
+              className={`${badgeClass('primary', 'md')} max-w-full hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
+            >
+              <GraduationCap aria-hidden="true" /> <span className="truncate">{doc.courseCode ? `${doc.courseCode} · ` : ''}{doc.courseTitle}</span>
             </Link>
           )}
           {!doc.hasExtractedText && (
-            <span className={`${badge} bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-amber-200 dark:ring-amber-500/30`}>
-              Текст не распознан
+            <span className={badgeClass('warning', 'md')}>
+              <FileText aria-hidden="true" /> Текст не распознан
             </span>
           )}
           <PiiBadge doc={doc} size="large" />
           <OcrBadge doc={doc} size="large" />
         </div>
-        {doc.ocrStatus === 'FAILED' && canDeleteDocument(doc) && <OcrReview doc={doc} onUpdated={onUpdated} />}
-        {doc.piiCount > 0 && canDeleteDocument(doc) && <OriginalAccess doc={doc} onUpdated={onUpdated} />}
+        {(doc.ocrStatus === 'FAILED' || doc.aiStatus === 'FAILED') && canDeleteDocument(doc) && <OcrReview doc={doc} onUpdated={onUpdated} />}
+        {hasProtectedOriginal(doc) && canDeleteDocument(doc) && <OriginalAccess doc={doc} onUpdated={onUpdated} />}
       </div>
       <div className="flex shrink-0 flex-wrap gap-2">
         {canDeleteDocument(doc) && <ReclassifyButton doc={doc} onUpdated={onUpdated} size="large" />}
@@ -212,23 +223,24 @@ function DocumentHeader({ doc, busy, onDownload, onDelete, onUpdated }) {
             type="button"
             onClick={onDelete}
             disabled={busy}
-            className="flex items-center gap-2 rounded-lg border border-red-200 dark:border-red-500/30 px-3.5 py-2 text-sm font-medium text-red-600 dark:text-red-400 transition hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-60"
+            className="flex h-10 items-center gap-2 rounded-control border border-danger/40 px-4 text-sm font-medium text-danger-fg transition-colors hover:bg-danger-soft focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:opacity-60"
           >
-            <Trash2 className="h-4 w-4" /> Удалить
+            <Trash2 className="h-4 w-4" aria-hidden="true" /> Удалить
           </button>
         )}
         {isOriginalRestricted(doc) ? (
-          <span className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3.5 py-2 text-sm text-slate-600 dark:text-slate-300">
-            <LockKeyhole className="h-4 w-4" aria-hidden="true" /> Оригинал доступен только преподавателю
+          <span className="flex min-h-10 items-center gap-2 rounded-control border border-line bg-page-alt px-3.5 py-2 text-sm text-fg-secondary">
+            <LockKeyhole className="h-4 w-4" aria-hidden="true" />
+            {isPiiUnknown(doc) && !doc.piiCount ? 'Скан ещё не проверен на личные данные' : 'Оригинал доступен только преподавателю'}
           </span>
         ) : (
           <button
             type="button"
             onClick={onDownload}
             disabled={busy}
-            className="flex items-center gap-2 rounded-lg bg-slate-900 dark:bg-slate-700 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 dark:hover:bg-slate-600 disabled:opacity-60"
+            className="flex h-10 items-center gap-2 rounded-control bg-primary px-4 text-sm font-semibold text-on-primary shadow-soft transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:opacity-60"
           >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Скачать
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />} Скачать
           </button>
         )}
       </div>
@@ -237,13 +249,15 @@ function DocumentHeader({ doc, busy, onDownload, onDelete, onUpdated }) {
 }
 
 /**
- * Course teacher / ADMIN, when the scan's text could not be recognized ("Нужна проверка"): set the type by hand, or
- * run the recognition again (the processing job is queued anew; the page then follows its progress).
+ * Course teacher / ADMIN, when the scan's text could not be recognized or the AI could not type the document ("Нужна
+ * проверка"; students do not see it until a type is set): set the type by hand, or for a scan run the recognition
+ * again (the processing job is queued anew; the page then follows its progress).
  */
 function OcrReview({ doc, onUpdated }) {
   const { notifyError, showSuccess } = useToast()
   const [choosing, setChoosing] = useState(false)
   const [retrying, setRetrying] = useState(false)
+  const ocrFailed = doc.ocrStatus === 'FAILED'
 
   const retry = async () => {
     setRetrying(true)
@@ -260,27 +274,34 @@ function OcrReview({ doc, onUpdated }) {
 
   const action = 'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-medium transition disabled:opacity-60'
   return (
-    <div className="mt-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-3 py-2.5 text-xs text-amber-900 dark:text-amber-200">
-      <p className="font-semibold">Нужна проверка: текст скана распознать не удалось.</p>
-      <p className="mt-0.5">Укажите тип документа сами или запустите распознавание ещё раз.</p>
+    <div className="mt-3 rounded-control border border-warning/30 bg-warning-soft px-3 py-2.5 text-xs text-warning-fg">
+      <p className="font-semibold">
+        {ocrFailed ? 'Нужна проверка: текст скана распознать не удалось.' : 'Нужна проверка: ИИ не определил тип документа.'}
+      </p>
+      <p className="mt-0.5">
+        {doc.aiStatus === 'MANUAL' ? '' : 'Студенты не видят документ, пока вы не укажете его тип. '}
+        {ocrFailed ? 'Укажите тип документа сами или запустите распознавание ещё раз.' : 'Укажите тип документа сами.'}
+      </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <button
           type="button"
           onClick={() => setChoosing(true)}
           disabled={retrying}
-          className={`${action} border-amber-300 dark:border-amber-500/40 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 hover:bg-amber-100/60 dark:hover:bg-slate-800`}
+          className={`${action} border-warning/30 bg-surface text-fg hover:bg-warning-soft`}
         >
           Указать тип вручную
         </button>
-        <button
-          type="button"
-          onClick={retry}
-          disabled={retrying}
-          className={`${action} border-amber-300 dark:border-amber-500/40 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 hover:bg-amber-100/60 dark:hover:bg-slate-800`}
-        >
-          {retrying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Повторить распознавание
-        </button>
+        {ocrFailed && (
+          <button
+            type="button"
+            onClick={retry}
+            disabled={retrying}
+            className={`${action} border-warning/30 bg-surface text-fg hover:bg-warning-soft`}
+          >
+            {retrying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Повторить распознавание
+          </button>
+        )}
       </div>
       {choosing && <SetCategoryDialog doc={doc} onClose={() => setChoosing(false)} onSaved={onUpdated} />}
     </div>
@@ -296,16 +317,22 @@ function OriginalAccess({ doc, onUpdated }) {
   const [confirm, confirmDialog] = useConfirm()
   const [saving, setSaving] = useState(false)
   const allowed = doc.originalAllowedForStudents
+  // A scan without recognized text: personal data are not known to be absent, nothing is masked yet.
+  const unchecked = isPiiUnknown(doc) && !doc.piiCount
 
   const toggle = async () => {
     const confirmed = await confirm(allowed ? {
       title: 'Закрыть оригинал для студентов?',
-      message: 'Студенты снова будут видеть только текст, в котором личные данные скрыты.',
+      message: unchecked
+        ? 'Студенты не смогут открыть скан, пока его текст не распознан и не проверен на личные данные.'
+        : 'Студенты снова будут видеть только текст, в котором личные данные скрыты.',
       confirmLabel: 'Закрыть',
       tone: 'primary',
     } : {
       title: 'Разрешить студентам оригинал?',
-      message: 'Студенты курса смогут открыть и скачать файл вместе с личными данными. Каждое открытие попадёт в журнал.',
+      message: unchecked
+        ? 'Скан не проверен на личные данные: студенты курса смогут открыть и скачать его как есть. Каждое открытие попадёт в журнал.'
+        : 'Студенты курса смогут открыть и скачать файл вместе с личными данными. Каждое открытие попадёт в журнал.',
       confirmLabel: 'Разрешить',
       tone: 'primary',
     })
@@ -323,25 +350,29 @@ function OriginalAccess({ doc, onUpdated }) {
   }
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-secondary">
       <button
         type="button"
         role="switch"
         aria-checked={allowed}
         onClick={toggle}
         disabled={saving}
-        className="inline-flex items-center gap-2 rounded-lg font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-60"
+        className="inline-flex items-center gap-2 rounded-control font-medium text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60"
       >
         <span
           aria-hidden="true"
-          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition ${allowed ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}
+          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition ${allowed ? 'bg-primary' : 'bg-line'}`}
         >
-          <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition ${allowed ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          <span className={`inline-block h-4 w-4 rounded-full bg-surface shadow transition ${allowed ? 'translate-x-4' : 'translate-x-0.5'}`} />
         </span>
         Разрешить студентам оригинал
         {saving && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
       </button>
-      <span>{allowed ? 'Студенты могут открыть файл; каждое открытие записывается в журнал.' : 'Студенты видят только текст со скрытыми личными данными.'}</span>
+      <span>
+        {allowed ? 'Студенты могут открыть файл; каждое открытие записывается в журнал.'
+          : unchecked ? 'Скан не проверен на личные данные: студенты не могут открыть оригинал.'
+            : 'Студенты видят только текст со скрытыми личными данными.'}
+      </span>
       {confirmDialog}
     </div>
   )
@@ -351,20 +382,20 @@ function OpenError({ error, onRetry }) {
   const forbidden = error.status === 403
   return (
     <div className="mx-auto mt-16 flex max-w-md flex-col items-center text-center">
-      <span className={`flex h-14 w-14 items-center justify-center rounded-2xl ${forbidden ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+      <span className={`flex h-14 w-14 items-center justify-center rounded-card ${forbidden ? 'bg-warning-soft text-warning' : 'bg-page-alt text-fg-muted'}`}>
         <ShieldAlert className="h-7 w-7" />
       </span>
-      <h1 className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">
+      <h1 className="mt-4 text-lg font-semibold text-fg">
         {forbidden ? 'Нет доступа к документу' : error.status === 404 ? 'Документ не найден' : 'Не удалось открыть документ'}
       </h1>
-      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+      <p className="mt-1 text-sm text-fg-muted">
         {forbidden ? 'Документ виден только участникам курса или преподавателям. Обратитесь к владельцу документа.' : error.message}
       </p>
       {!forbidden && error.status !== 404 && (
         <button
           type="button"
           onClick={onRetry}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+          className="mt-4 inline-flex items-center gap-1.5 rounded-control bg-primary px-3.5 py-2 text-sm font-semibold text-on-primary transition hover:bg-primary-hover"
         >
           <RefreshCw className="h-4 w-4" /> Повторить
         </button>

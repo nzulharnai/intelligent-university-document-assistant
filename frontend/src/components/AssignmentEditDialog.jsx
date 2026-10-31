@@ -1,31 +1,32 @@
-import { useId, useRef, useState } from 'react'
-import { Loader2, Pencil, X } from 'lucide-react'
+import { useId, useState } from 'react'
+import { Info, Pencil } from 'lucide-react'
 import api from '../api/axios'
 import { useToast } from '../context/ToastContext'
 import useConfirm from '../hooks/useConfirm'
-import useDialogFocus from '../hooks/useDialogFocus'
-
-const inputClass = 'w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white outline-none transition placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-500/30'
+import Button from './ui/Button'
+import Dialog, { DialogActions } from './ui/Dialog'
+import { checkboxClass, controlClass as inputClass, hintClass, labelClass } from './ui/styles'
 
 // The backend keeps deadlines as wall-clock time of the university (no zone), like the datetime-local input.
 const toInputValue = (deadline) => (deadline ? deadline.slice(0, 16) : '')
 
 /**
- * Edits an assignment's title, requirements and deadline (PATCH /assignments/{id}), e.g. to fix what the AI got
- * wrong. A published assignment's changes reach the students' tasks at once; their progress and submissions stay.
+ * Edits an assignment's title, requirements, deadline, whether late work is accepted and the highest grade
+ * (PATCH /assignments/{id}), e.g. to fix what the AI got wrong. A published assignment's changes reach the students'
+ * tasks at once; their progress and submissions stay.
  */
 export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
   const titleId = useId()
-  const dialogRef = useRef(null)
   const { notifyError, showSuccess } = useToast()
   const [confirm, confirmDialog] = useConfirm()
   const [form, setForm] = useState({
     title: assignment.title ?? '',
     description: assignment.description ?? '',
     deadline: toInputValue(assignment.deadline),
+    allowLate: assignment.allowLate ?? true,
+    maxScore: assignment.maxScore == null ? '' : String(assignment.maxScore),
   })
   const [saving, setSaving] = useState(false)
-  useDialogFocus(dialogRef, { onClose, busy: saving })
 
   const published = assignment.status !== 'DRAFT'
   const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }))
@@ -48,6 +49,8 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
         title: form.title.trim(),
         description: form.description.trim() || null,
         deadline: form.deadline ? `${form.deadline}:00` : null,
+        allowLate: form.allowLate,
+        maxScore: form.maxScore === '' ? null : Number(form.maxScore),
       })
       showSuccess(published ? 'Задание сохранено, студенты видят изменения' : 'Черновик сохранён')
       onSaved?.(data)
@@ -60,85 +63,73 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !saving) onClose()
-      }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        className="animate-step-in w-full max-w-lg rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <h2 id={titleId} className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-white">
-            <Pencil className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-            {published ? 'Изменить задание' : 'Изменить черновик'}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            aria-label="Закрыть"
-            className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-60"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <form onSubmit={save} className="mt-4 space-y-3">
+    <>
+    <Dialog title={published ? 'Изменить задание' : 'Изменить черновик'} icon={Pencil} onClose={onClose} busy={saving} size="lg">
+        <form onSubmit={save} className="mt-5 space-y-4">
           <div>
-            <label htmlFor={`${titleId}-title`} className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Название</label>
+            <label htmlFor={`${titleId}-title`} className={labelClass}>Название</label>
             <input id={`${titleId}-title`} value={form.title} onChange={update('title')} required maxLength={255} className={inputClass} />
           </div>
           <div>
-            <label htmlFor={`${titleId}-req`} className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Требования</label>
+            <label htmlFor={`${titleId}-req`} className={labelClass}>Требования</label>
             <textarea id={`${titleId}-req`} value={form.description} onChange={update('description')} rows={4} maxLength={2000} className={`${inputClass} resize-y`} />
           </div>
           <div>
-            <label htmlFor={`${titleId}-deadline`} className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Дедлайн</label>
+            <label htmlFor={`${titleId}-deadline`} className={labelClass}>Дедлайн</label>
             <div className="flex gap-2">
               <input id={`${titleId}-deadline`} type="datetime-local" value={form.deadline} onChange={update('deadline')} className={inputClass} />
               {form.deadline && (
-                <button
-                  type="button"
-                  onClick={() => setForm((current) => ({ ...current, deadline: '' }))}
-                  className="shrink-0 rounded-lg border border-slate-300 dark:border-slate-700 px-3 text-xs font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
+                <Button variant="outline" onClick={() => setForm((current) => ({ ...current, deadline: '' }))} className="h-auto">
                   Без срока
-                </button>
+                </Button>
               )}
             </div>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Время указывается по часовому поясу вуза.</p>
+            <p className={hintClass}>Время указывается по часовому поясу вуза.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor={`${titleId}-score`} className={labelClass}>Максимальный балл</label>
+              <input
+                id={`${titleId}-score`}
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={1000}
+                step={1}
+                value={form.maxScore}
+                onChange={update('maxScore')}
+                placeholder="Без баллов"
+                aria-describedby={`${titleId}-score-hint`}
+                className={`${inputClass} tabular-nums`}
+              />
+              <p id={`${titleId}-score-hint`} className={hintClass}>От 1 до 1000; пусто — задание без баллов.</p>
+            </div>
+            <label className="flex cursor-pointer items-start gap-2.5 self-start rounded-control border border-line-strong bg-surface px-3 py-2.5 text-sm text-fg sm:mt-7 has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-ring">
+              <input
+                type="checkbox"
+                checked={form.allowLate}
+                onChange={(event) => setForm((current) => ({ ...current, allowLate: event.target.checked }))}
+                className={`${checkboxClass} mt-0.5`}
+              />
+              <span>
+                Разрешить сдачу после срока
+                <span className="block text-small text-fg-muted">Такие работы отмечаются «с опозданием».</span>
+              </span>
+            </label>
           </div>
           {published && (
-            <p className="rounded-lg bg-indigo-50 dark:bg-indigo-500/10 px-3 py-2 text-xs text-indigo-800 dark:text-indigo-200">
+            <p className="flex items-start gap-2 rounded-control bg-primary-soft px-3 py-2 text-small text-primary-fg">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               Студенты курса сразу увидят изменения; их статусы и сданные решения сохранятся.
             </p>
           )}
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={saving}
-              className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800/50 disabled:opacity-60"
-            >
-              Отмена
-            </button>
-            <button
-              type="submit"
-              disabled={saving || !form.title.trim()}
-              className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
-            >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />} Сохранить
-            </button>
-          </div>
+          <DialogActions>
+            <Button variant="outline" onClick={onClose} disabled={saving}>Отмена</Button>
+            <Button type="submit" loading={saving} disabled={!form.title.trim()}>Сохранить</Button>
+          </DialogActions>
         </form>
-      </div>
-      {confirmDialog}
-    </div>
+    </Dialog>
+    {confirmDialog}
+    </>
   )
 }

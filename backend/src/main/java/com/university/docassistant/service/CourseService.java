@@ -28,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -49,6 +50,7 @@ public class CourseService {
     private final AccessControlService access;
     private final AuditService auditService;
     private final JoinAttemptLimiter joinAttemptLimiter;
+    private final CoursePrivacyRemask privacyRemask;
 
     static final String COURSE_NOT_FOUND = "Курс не найден";
     static final String TEACHER_ROLE_PENDING_MESSAGE =
@@ -240,7 +242,12 @@ public class CourseService {
         }
         Course course = courseRepository.findWithTeacherById(courseId)
                 .orElseThrow(() -> ApiException.notFound(ErrorCodes.COURSE_NOT_FOUND, "Course not found"));
+        User previous = course.getTeacher();
         course.setTeacher(requireTeacher(teacherId));
+        if (previous == null || !previous.getId().equals(teacherId)) {
+            // The teacher's e-mail and phone stay readable in the course's documents: those are now someone else's.
+            privacyRemask.schedule(List.of(courseId));
+        }
         auditService.record(admin.getEmail(), AuditService.COURSE_TEACHER_CHANGED,
                 "Course " + courseId + " now taught by " + course.getTeacher().getEmail());
         log.info("Admin {} assigned teacher {} to course {}", admin.getEmail(), teacherId, courseId);

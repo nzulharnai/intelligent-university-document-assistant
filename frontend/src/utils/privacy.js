@@ -19,5 +19,14 @@ export const PII_PLACEHOLDER = /(\[(?:ИИН|телефон|e-mail|номер д
 /** The viewer manages the document's course (teacher or ADMIN): they see the original and the personal data badge. */
 export const managesDocument = (doc) => canDeleteDocument(doc)
 
-/** The original file has personal data and is closed to this viewer: preview and download would answer 403. */
-export const isOriginalRestricted = (doc) => (doc?.piiCount ?? 0) > 0 && !doc.originalAllowedForStudents && !managesDocument(doc)
+/** A scan whose text is not recognized (yet): whether it holds personal data is unknown, so it counts as if it did. */
+export const isPiiUnknown = (doc) => Boolean(doc?.piiUnknown)
+
+/** The original may hold personal data: the teacher decides whether students get it ("Разрешить студентам оригинал"). */
+export const hasProtectedOriginal = (doc) => (doc?.piiCount ?? 0) > 0 || isPiiUnknown(doc)
+
+/**
+ * The original file has personal data, or is a scan not checked for it, and is closed to this viewer: preview and
+ * download would answer 403.
+ */
+export const isOriginalRestricted = (doc) => hasProtectedOriginal(doc) && !doc.originalAllowedForStudents && !managesDocument(doc)

@@ -84,7 +84,7 @@ class AssignmentEditTest {
                 .status(AssignmentStatus.ACTIVE).course(course).sourceDocument(syllabus).build();
         when(assignments.findById(1L)).thenReturn(Optional.of(lab));
         when(assignments.findViewById(1L)).thenReturn(Optional.of(new AssignmentResponse(1L, "Lab 1", null, null,
-                AssignmentStatus.ACTIVE, 10L, "Algorithms", null, null, null, null, null, null, null)));
+                AssignmentStatus.ACTIVE, 10L, "Algorithms", null, null, null, null, null, null, null, false, true, null)));
     }
 
     private static UpdateAssignmentRequest edit(String title, LocalDateTime deadline) {

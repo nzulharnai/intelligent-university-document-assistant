@@ -39,9 +39,16 @@ export const VISIBILITY_OPTIONS = [
   { value: 'TEACHER_ONLY', label: 'Только преподаватель курса (заметки)' },
 ]
 
-// Same names as the backend TaskStatus enum.
+// Same names as the backend TaskStatus enum. SUBMITTED and GRADED are set by the system (a submission, the
+// teacher's grade); COMPLETED exists only on legacy tasks without an assignment.
 export const TASK_STATUS_LABELS = {
-  PENDING: 'К выполнению',
+  PENDING: 'Не начато',
   IN_PROGRESS: 'В работе',
+  SUBMITTED: 'Сдано',
+  GRADED: 'Оценено',
   COMPLETED: 'Выполнено',
 }
+
+// What the student may pick by hand: on an assignment task only these two, on a legacy task also COMPLETED.
+export const ASSIGNMENT_TASK_STATUSES = ['PENDING', 'IN_PROGRESS']
+export const LEGACY_TASK_STATUSES = ['PENDING', 'IN_PROGRESS', 'COMPLETED']

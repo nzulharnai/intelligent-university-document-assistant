@@ -33,7 +33,7 @@ export default function JoinCoursePage() {
   }, [code, isStudent, navigate, showSuccess])
 
   return (
-    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950">
+    <div className="min-h-screen bg-page">
       <Navbar />
       <main className="mx-auto mt-16 flex max-w-md flex-col items-center px-4 text-center">
         {!isStudent ? (
@@ -51,7 +51,7 @@ export default function JoinCoursePage() {
               : error.message}
           />
         ) : (
-          <p className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <p className="flex items-center gap-2 text-sm text-fg-muted">
             <Loader2 className="h-4 w-4 animate-spin" /> Записываем на курс…
           </p>
         )}
@@ -63,10 +63,10 @@ export default function JoinCoursePage() {
 function Message({ icon: Icon, title, text }) {
   return (
     <>
-      <Icon className="h-10 w-10 text-slate-400" />
-      <h1 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">{title}</h1>
-      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{text}</p>
-      <Link to="/courses" className="mt-4 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700">
+      <Icon className="h-10 w-10 text-fg-muted" />
+      <h1 className="mt-3 text-lg font-semibold text-fg">{title}</h1>
+      <p className="mt-1 text-sm text-fg-muted">{text}</p>
+      <Link to="/courses" className="mt-4 rounded-control bg-primary px-3.5 py-2 text-sm font-semibold text-on-primary transition hover:bg-primary-hover">
         Мои курсы
       </Link>
     </>

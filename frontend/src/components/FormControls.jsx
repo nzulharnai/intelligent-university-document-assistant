@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react'
 import { OTP_LENGTH } from '../constants/otp'
+import Button from './ui/Button'
+import { controlClass, controlErrorClass, errorTextClass, labelClass } from './ui/styles'
 
 export function TextField({ label, icon: Icon, id, type = 'text', error, ...props }) {
   const [showPassword, setShowPassword] = useState(false)
@@ -8,31 +10,26 @@ export function TextField({ label, icon: Icon, id, type = 'text', error, ...prop
 
   return (
     <div>
-      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+      <label htmlFor={id} className={labelClass}>
         {label}
       </label>
       <div className="relative">
         {Icon && (
-          <Icon className="pointer-events-none absolute left-3 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+          <Icon className="pointer-events-none absolute left-3 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
         )}
         <input
           id={id}
           type={isPassword && showPassword ? 'text' : type}
-          className={`w-full rounded-lg border bg-white dark:bg-slate-900 py-2.5 text-sm text-slate-900 dark:text-white outline-none transition placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:ring-4 ${
-            Icon ? 'pl-10' : 'pl-3'
-          } ${isPassword ? 'pr-10' : 'pr-3'} ${
-            error
-              ? 'border-red-400 focus:border-red-500 focus:ring-red-100 dark:focus:ring-red-500/30'
-              : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-indigo-100 dark:focus:ring-indigo-500/30'
-          }`}
+          className={`${controlClass} h-11 ${Icon ? 'pl-10' : ''} ${isPassword ? 'pr-10' : ''} ${error ? controlErrorClass : ''}`}
           aria-invalid={Boolean(error)}
+          aria-describedby={typeof error === 'string' && error ? `${id}-error` : undefined}
           {...props}
         />
         {isPassword && (
           <button
             type="button"
             onClick={() => setShowPassword((value) => !value)}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-fg-muted transition hover:bg-page-alt hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
             aria-pressed={showPassword}
           >
@@ -41,22 +38,16 @@ export function TextField({ label, icon: Icon, id, type = 'text', error, ...prop
         )}
       </div>
       {/* error={true} only outlines the field; the message is shown elsewhere (e.g. "wrong email or password"). */}
-      {typeof error === 'string' && error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {typeof error === 'string' && error && <p id={`${id}-error`} className={errorTextClass}>{error}</p>}
     </div>
   )
 }
 
 export function SubmitButton({ loading, children, ...props }) {
   return (
-    <button
-      type="submit"
-      disabled={loading}
-      className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-200 dark:focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-70"
-      {...props}
-    >
-      {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+    <Button type="submit" loading={loading} className="h-11 w-full" {...props}>
       {children}
-    </button>
+    </Button>
   )
 }
 
@@ -67,13 +58,11 @@ export function Alert({ type = 'error', children }) {
   return (
     <div
       role={isError ? 'alert' : 'status'}
-      className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm ${
-        isError
-          ? 'border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300'
-          : 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+      className={`flex items-start gap-2 rounded-control border border-current/20 px-3 py-2.5 text-sm ${
+        isError ? 'bg-danger-soft text-danger-fg' : 'bg-success-soft text-success-fg'
       }`}
     >
-      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
       <span>{children}</span>
     </div>
   )
@@ -131,12 +120,8 @@ export function OtpInput({ value, onChange, error, disabled, autoFocus }) {
           disabled={disabled}
           aria-label={`Цифра ${index + 1}`}
           aria-invalid={Boolean(error)}
-          className={`h-12 w-full rounded-lg border text-center text-lg font-semibold text-slate-900 dark:text-white outline-none transition focus:ring-4 disabled:bg-slate-50 dark:disabled:bg-slate-800/50 ${
-            error
-              ? 'border-red-400 focus:border-red-500 focus:ring-red-100 dark:focus:ring-red-500/30'
-              : digit
-                ? 'border-indigo-400 focus:border-indigo-500 focus:ring-indigo-100 dark:focus:ring-indigo-500/30'
-                : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-indigo-100 dark:focus:ring-indigo-500/30'
+          className={`h-12 w-full rounded-control border bg-surface text-center text-lg font-semibold tabular-nums text-fg outline-none transition focus:border-primary focus:ring-4 focus:ring-ring disabled:bg-page-alt ${
+            error ? controlErrorClass : digit ? 'border-primary' : 'border-line-strong'
           }`}
         />
       ))}

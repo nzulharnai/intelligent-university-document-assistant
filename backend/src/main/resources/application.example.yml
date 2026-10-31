@@ -63,19 +63,15 @@ spring:
           timeout: 10000
           writetimeout: 10000
 
-  security:
-    oauth2:
-      client:
-        registration:
-          google:
-            client-id: ${GOOGLE_CLIENT_ID:your-google-client-id}
-            client-secret: ${GOOGLE_CLIENT_SECRET:your-google-client-secret}
-            scope:
-              - openid
-              - profile
-              - email
-
 app:
+  # Deadlines, submission times and reminders are local date-times of this zone (shared Clock, ClockConfig).
+  time-zone: ${APP_TIME_ZONE:Asia/Almaty}
+  notifications:
+    # Deadline reminders (DEADLINE_REMINDER_24H): Spring cron with seconds, in app.time-zone; "-" turns them off.
+    # For a demo use e.g. "0 * * * * *" (every minute), or POST /api/v1/admin/notifications/run-reminders as ADMIN.
+    reminder-cron: ${REMINDER_CRON:0 */15 * * * *}
+    # How far ahead a deadline counts as "soon".
+    reminder-hours: ${REMINDER_HOURS:24}
   jwt:
     # Base64-encoded, at least 256 bits for HS256. Generate your own: openssl rand -base64 32
     # The placeholder below is valid only so the app starts locally; never use it in production.
@@ -90,6 +86,13 @@ app:
     # this be true; otherwise clients could fake their IP and dodge the limit. Default: the TCP peer address.
     trust-forwarded-for: ${TRUST_FORWARDED_FOR:false}
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  oauth2:
+    google:
+      # Google sign-in ("Войти через Google"): the Web application OAuth client from Google Cloud Console.
+      # Empty or a placeholder = password login only, one WARN at startup and no Google button on the login page.
+      # The client ID must end with .apps.googleusercontent.com. Never commit the secret: set both in backend/.env.
+      client-id: ${GOOGLE_CLIENT_ID:}
+      client-secret: ${GOOGLE_CLIENT_SECRET:}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   mail:
@@ -102,6 +105,15 @@ app:
     driver: ${STORAGE_DRIVER:local}
     # local: relative paths resolve against the backend's working directory. Never commit this folder.
     upload-dir: ${UPLOAD_DIR:uploads}
+    # US-03, local driver: files (documents and task submissions) are encrypted at rest with AES-256-GCM.
+    encryption:
+      # Empty = on exactly when a key is set; true without a key, or an invalid key, stops the startup.
+      enabled: ${STORAGE_ENCRYPTION_ENABLED:}
+      # Base64 of 32 random bytes. Set it in backend/.env, never here. Generate one in PowerShell:
+      #   $b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
+      # (or: openssl rand -base64 32). Keep a backup: files written with a key cannot be read without it, and
+      # changing the key is not supported. Older plain files stay readable and are encrypted at the next start.
+      key: ${STORAGE_ENCRYPTION_KEY:}
     # s3: credentials come from the AWS default chain - AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY as real environment
     # variables (backend/.env is not read by the AWS SDK), ~/.aws/credentials, or an instance/container role.
     # Never put keys in this file.
@@ -112,6 +124,8 @@ app:
       endpoint: ${S3_ENDPOINT:}
       # MinIO needs path-style URLs (http://host/bucket/key); AWS works with the default false.
       path-style-access: ${S3_PATH_STYLE_ACCESS:false}
+      # US-03: server-side encryption of every object: AES256 (SSE-S3) or none (only for servers without SSE).
+      sse: ${S3_SSE:AES256}
   ocr:
     # US-07: text recognition for scanned PDFs and images with Tesseract (needs rus, kaz, eng language packs).
     # Runs only in the background job after an upload, never in the upload request. A PDF or image with less than
@@ -142,8 +156,10 @@ app:
     base-url: ${AI_BASE_URL:https://api.groq.com/openai/v1}
     connect-timeout: 10s
     read-timeout: ${AI_READ_TIMEOUT:90s}
-    # About 15-25k tokens; the rest of a longer document is not sent.
-    max-input-chars: ${AI_MAX_INPUT_CHARS:60000}
+    # Longest text of one deadline-extraction call (~5k tokens). Groq's free tier allows about 8000 tokens PER MINUTE
+    # for openai/gpt-oss-120b, so a bigger call can never succeed, whatever the retries. Longer documents are sent in
+    # chunks of this size, one after another. Raise it on a paid plan or another provider.
+    max-input-chars: ${AI_MAX_INPUT_CHARS:15000}
     # Background AI jobs (classification, deadline extraction) running at once. Groq's free tier allows only a few
     # requests and tokens per minute, so a ZIP of many files at 4+ in parallel quickly hits 429; 2 keeps a batch
     # moving without tripping the limit. Raise it on a paid plan or another provider.
