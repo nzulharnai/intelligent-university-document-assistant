@@ -328,7 +328,8 @@ class AssignmentLifecycleTest {
         private final CourseRepository courses = mock(CourseRepository.class);
         private final AssignmentService assignmentService = mock(AssignmentService.class);
         private final CourseService courseService = new CourseService(courses, enrollments, tasks,
-                mock(UserRepository.class), assignmentService, access, audit, new JoinAttemptLimiter(), mock(CoursePrivacyRemask.class));
+                mock(UserRepository.class), assignmentService, access, audit, new JoinAttemptLimiter(), mock(CoursePrivacyRemask.class),
+                Clock.systemDefaultZone());
 
         @Test
         void unenrollKeepsTasksAndSubmissions() {

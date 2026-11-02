@@ -1,5 +1,6 @@
 package com.university.docassistant.service;
 
+import java.time.LocalDateTime;
 import com.university.docassistant.entity.Course;
 import com.university.docassistant.entity.Role;
 import com.university.docassistant.entity.User;
@@ -52,7 +53,7 @@ class CourseJoinTest {
     private final AccessControlService access = new AccessControlService(users, courses, mock(DocumentRepository.class),
             enrollments, audit);
     private final CourseService service = new CourseService(courses, enrollments, mock(TaskRepository.class), users,
-            assignments, access, audit, new JoinAttemptLimiter(clock), mock(CoursePrivacyRemask.class));
+            assignments, access, audit, new JoinAttemptLimiter(clock), mock(CoursePrivacyRemask.class), clock);
 
     @BeforeEach
     void setUp() {
@@ -68,18 +69,18 @@ class CourseJoinTest {
 
     @Test
     void validCodeEnrollsAndHandsOutTheCourseTasks() {
-        when(enrollments.enroll(345L, 1L)).thenReturn(1);
+        when(enrollments.enroll(eq(345L), eq(1L), any())).thenReturn(1);
 
         assertThat(service.join(course.getInviteCode(), "student@uni.kz")).isEqualTo(345L);
 
-        verify(enrollments).enroll(345L, 1L);
+        verify(enrollments).enroll(345L, 1L, LocalDateTime.ofInstant(clock.instant(), clock.getZone()));
         verify(assignments).handOut(345L);
         verify(audit).record(eq("student@uni.kz"), eq(AuditService.STUDENT_ENROLLED), anyString());
     }
 
     @Test
     void joiningTwiceIsNotAnError() {
-        when(enrollments.enroll(345L, 1L)).thenReturn(1).thenReturn(0);
+        when(enrollments.enroll(eq(345L), eq(1L), any())).thenReturn(1).thenReturn(0);
 
         assertThat(service.join(course.getInviteCode(), "student@uni.kz")).isEqualTo(345L);
         assertThat(service.join("  " + course.getInviteCode() + " ", "student@uni.kz")).isEqualTo(345L);
@@ -93,7 +94,7 @@ class CourseJoinTest {
         assertNotFound("345"); // A course id is not a code.
         assertNotFound("../../admin");
 
-        verify(enrollments, never()).enroll(anyLong(), anyLong());
+        verify(enrollments, never()).enroll(anyLong(), anyLong(), any());
         verify(audit, times(3)).record(eq("student@uni.kz"), eq(AuditService.COURSE_JOIN_FAILED), anyString());
     }
 
@@ -115,7 +116,7 @@ class CourseJoinTest {
                         ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS));
 
         clock.advance(JoinAttemptLimiter.WINDOW.plusSeconds(1));
-        when(enrollments.enroll(345L, 1L)).thenReturn(1);
+        when(enrollments.enroll(eq(345L), eq(1L), any())).thenReturn(1);
         assertThat(service.join(course.getInviteCode(), "student@uni.kz")).isEqualTo(345L);
     }
 
@@ -128,18 +129,18 @@ class CourseJoinTest {
                 });
         assertThatThrownBy(() -> service.enroll(345L, 1L, "student@uni.kz")) // Naming themselves does not help.
                 .isInstanceOf(ApiException.class);
-        verify(enrollments, never()).enroll(anyLong(), anyLong());
+        verify(enrollments, never()).enroll(anyLong(), anyLong(), any());
         verify(audit, times(2)).record(eq("student@uni.kz"), eq(AuditService.ACCESS_DENIED), startsWith("self-enroll"));
     }
 
     @Test
     void teacherStillEnrollsAStudentById() {
         when(users.findById(1L)).thenReturn(Optional.of(student));
-        when(enrollments.enroll(345L, 1L)).thenReturn(1);
+        when(enrollments.enroll(eq(345L), eq(1L), any())).thenReturn(1);
 
         service.enroll(345L, 1L, "teacher@uni.kz");
 
-        verify(enrollments).enroll(345L, 1L);
+        verify(enrollments).enroll(eq(345L), eq(1L), any());
         verify(assignments).handOut(345L);
     }
 
@@ -155,7 +156,7 @@ class CourseJoinTest {
         verify(audit).record("teacher@uni.kz", AuditService.COURSE_INVITE_REGENERATED, "Course 345");
 
         assertNotFound(old);
-        when(enrollments.enroll(345L, 1L)).thenReturn(1);
+        when(enrollments.enroll(eq(345L), eq(1L), any())).thenReturn(1);
         assertThat(service.join(fresh, "student@uni.kz")).isEqualTo(345L);
     }
 

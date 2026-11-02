@@ -72,8 +72,8 @@ class MyTasksPostgresTest {
         algorithms = persist(Course.builder().title("Algorithms").code("ALG").teacher(teacher).build());
         databases = persist(Course.builder().title("Databases").code("DB").teacher(teacher).build());
         for (Course course : List.of(algorithms, databases)) {
-            enrollments.enroll(course.getId(), student.getId());
-            enrollments.enroll(course.getId(), other.getId());
+            enrollments.enroll(course.getId(), student.getId(), LocalDateTime.now());
+            enrollments.enroll(course.getId(), other.getId(), LocalDateTime.now());
         }
         task("Просрочено", algorithms, TaskStatus.PENDING, NOW.minusSeconds(1), false, AssignmentStatus.ACTIVE);
         task("В работе, просрочено", databases, TaskStatus.IN_PROGRESS, NOW.minusDays(2), false, AssignmentStatus.ACTIVE);

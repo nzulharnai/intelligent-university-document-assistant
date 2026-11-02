@@ -58,6 +58,11 @@ public final class ErrorCodes {
     public static final String ASSIGNMENT_NOT_DRAFT = "ASSIGNMENT_NOT_DRAFT";
     /** 400: a draft without a title cannot be published. */
     public static final String ASSIGNMENT_TITLE_REQUIRED = "ASSIGNMENT_TITLE_REQUIRED";
+    /**
+     * 400: PATCH lowers max_score below existing grades of the assignment (or clears it while a grade is above 1000);
+     * the message says how many grades are in the way.
+     */
+    public static final String MAX_SCORE_BELOW_GRADES = "MAX_SCORE_BELOW_GRADES";
     /** 400: a DRAFT cannot be closed (that would show it to students); publish or delete it. */
     public static final String ASSIGNMENT_IS_DRAFT = "ASSIGNMENT_IS_DRAFT";
     /** 403: the original file contains personal data and the course teacher has not opened it to students. */
@@ -97,6 +102,11 @@ public final class ErrorCodes {
     public static final String TASK_NOT_GRADABLE = "TASK_NOT_GRADABLE";
     /** Score outside 0..max_score (0..1000 without one) or with more than one decimal; the message names the range. */
     public static final String GRADE_SCORE_INVALID = "GRADE_SCORE_INVALID";
+    /**
+     * 409: grading a task with nothing handed in while the student may still hand in (ACTIVE assignment, deadline not
+     * passed); the message names the deadline.
+     */
+    public static final String GRADE_TOO_EARLY = "GRADE_TOO_EARLY";
 
     // --- Notifications ----------------------------------------------------------------------------------------------
     /** Not one of the user's own notifications (also for others' ids, which reveal nothing). */

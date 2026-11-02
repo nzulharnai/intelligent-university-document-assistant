@@ -63,11 +63,17 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
              AND (a.id IS NULL OR a.status = com.university.docassistant.entity.AssignmentStatus.ACTIVE))
             """;
 
-    /** JPQL condition on Task t: nothing handed in and the deadline is before :now (strictly). "Просрочено". */
+    /**
+     * JPQL condition on Task t (assignment joined as a): nothing handed in, the deadline is before :now (strictly), the
+     * assignment (if any) is still ACTIVE, and the deadline had not already passed when the student enrolled.
+     * "Просрочено". A CLOSED assignment's task is "Задание закрыто", a late enrollee's "Срок прошёл до записи".
+     */
     String OVERDUE = """
             (t.status IN (com.university.docassistant.entity.TaskStatus.PENDING,
                           com.university.docassistant.entity.TaskStatus.IN_PROGRESS)
-             AND t.deadline < :now)
+             AND t.deadline < :now
+             AND (a.id IS NULL OR a.status = com.university.docassistant.entity.AssignmentStatus.ACTIVE)
+             AND t.deadlineBeforeEnrollment = false)
             """;
 
     /** JPQL condition on Task t for "Мои задачи": the state filter (TaskStateFilter name in :state). */
@@ -165,14 +171,18 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
             """)
     Optional<SubmitRules> findSubmitRulesById(@Param("id") Long id);
 
-    /** What grading a task needs to know: its course, assignment, state, the assignment's max score, its student. */
+    /**
+     * What grading a task needs to know: its course, assignment, state, the assignment's max score, its student, and
+     * the assignment's deadline and status (whether the student may still hand in).
+     */
     record GradeTarget(Long taskId, Long courseId, Long assignmentId, TaskStatus status, LocalDateTime submittedAt,
-                       BigDecimal score, Integer maxScore, String studentEmail) {
+                       BigDecimal score, Integer maxScore, String studentEmail, LocalDateTime deadline,
+                       AssignmentStatus assignmentStatus) {
     }
 
     @Query("""
             SELECT new com.university.docassistant.repository.TaskRepository$GradeTarget(
-                t.id, c.id, a.id, t.status, t.submittedAt, t.score, a.maxScore, u.email)
+                t.id, c.id, a.id, t.status, t.submittedAt, t.score, a.maxScore, u.email, a.deadline, a.status)
             FROM Task t JOIN t.user u LEFT JOIN t.course c LEFT JOIN t.assignment a WHERE t.id = :id
             """)
     Optional<GradeTarget> findGradeTargetById(@Param("id") Long id);
@@ -253,13 +263,15 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
 
     /**
      * JPQL condition on Task t: the 24-hour reminder is due. Nothing handed in, the deadline in (:now, :until], the
-     * assignment ACTIVE, the student still enrolled, no reminder sent yet.
+     * assignment ACTIVE, the student still enrolled, no reminder sent yet, and the deadline had not passed before
+     * they enrolled.
      */
     String REMINDER_DUE = """
             t.reminderSentAt IS NULL
             AND t.status IN (com.university.docassistant.entity.TaskStatus.PENDING,
                              com.university.docassistant.entity.TaskStatus.IN_PROGRESS)
             AND t.deadline > :now AND t.deadline <= :until
+            AND t.deadlineBeforeEnrollment = false
             AND t.assignment.id IN (SELECT ra.id FROM Assignment ra
                                     WHERE ra.status = com.university.docassistant.entity.AssignmentStatus.ACTIVE)
             AND EXISTS (SELECT e.enrolledAt FROM Enrollment e WHERE e.course = t.course AND e.student = t.user)
@@ -315,8 +327,10 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
      */
     @Modifying
     @Query(value = """
-            INSERT INTO tasks (title, description, deadline, status, document_id, course_id, user_id, assignment_id)
-            SELECT a.title, a.description, a.deadline, 'PENDING', a.source_document_id, a.course_id, e.student_id, a.id
+            INSERT INTO tasks (title, description, deadline, status, document_id, course_id, user_id, assignment_id,
+                               deadline_before_enrollment)
+            SELECT a.title, a.description, a.deadline, 'PENDING', a.source_document_id, a.course_id, e.student_id, a.id,
+                   (a.deadline IS NOT NULL AND e.enrolled_at IS NOT NULL AND a.deadline < e.enrolled_at)
             FROM assignments a JOIN course_students e ON e.course_id = a.course_id
             WHERE a.course_id = :courseId AND a.status = 'ACTIVE'
               AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.assignment_id = a.id AND t.user_id = e.student_id)
@@ -324,14 +338,22 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     int fanOut(@Param("courseId") Long courseId);
 
     /**
-     * Copies title, description and deadline of the course's assignments into their tasks; a moved deadline also
-     * re-decides whether a submission was late (an extension forgives it), and a deadline moved later clears the
-     * 24-hour reminder, so the new deadline is reminded of again.
+     * Copies title, description and deadline of the course's assignments into their tasks. A moved deadline can only
+     * clear the late mark, never set it: new late = old late AND submitted_at after the new deadline. An extension (or
+     * removing the deadline) forgives late work; moving the deadline earlier never makes work that was handed in on
+     * time late. Hand-ins after the change are judged by the current deadline (SubmissionService). The same for
+     * deadline_before_enrollment: cleared once the deadline is at or after the student's enrollment (or removed),
+     * never set here. A deadline moved later clears the 24-hour reminder, so the new deadline is reminded of again.
      */
     @Modifying
     @Query(value = """
             UPDATE tasks t SET title = a.title, description = a.description, deadline = a.deadline,
-                   late = (t.submitted_at IS NOT NULL AND a.deadline IS NOT NULL AND t.submitted_at > a.deadline),
+                   late = (t.late AND t.submitted_at IS NOT NULL AND a.deadline IS NOT NULL
+                           AND t.submitted_at > a.deadline),
+                   deadline_before_enrollment = (t.deadline_before_enrollment AND a.deadline IS NOT NULL
+                           AND NOT EXISTS (SELECT 1 FROM course_students e
+                                           WHERE e.course_id = t.course_id AND e.student_id = t.user_id
+                                             AND e.enrolled_at IS NOT NULL AND a.deadline >= e.enrolled_at)),
                    reminder_sent_at = CASE WHEN a.deadline IS NULL OR a.deadline > t.deadline THEN NULL
                                            ELSE t.reminder_sent_at END
             FROM assignments a
@@ -340,6 +362,10 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
                    OR t.deadline IS DISTINCT FROM a.deadline)
             """, nativeQuery = true)
     int syncWithAssignments(@Param("courseId") Long courseId);
+
+    /** How many tasks of the assignment have a grade above {@code max}; a new max_score must not go below them. */
+    @Query("SELECT COUNT(t) FROM Task t WHERE t.assignment.id = :assignmentId AND t.score > :max")
+    long countScoresAbove(@Param("assignmentId") Long assignmentId, @Param("max") BigDecimal max);
 
     @Modifying
     @Query("DELETE FROM Task t WHERE t.assignment.id IN :assignmentIds")

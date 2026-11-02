@@ -140,6 +140,6 @@ class TaskStatusRulesTest {
 
     private static TaskResponse view(Long id) {
         return new TaskResponse(id, "Lab 1", null, null, TaskStatus.IN_PROGRESS, null, null, null, null, null, null,
-                null, 0L, null, false, null, null, null, null, null);
+                null, 0L, null, false, null, null, null, null, null, false);
     }
 }

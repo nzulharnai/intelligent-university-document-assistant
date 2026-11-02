@@ -1,5 +1,71 @@
 # Changelog
 
+## Sprint 4 — review fixes
+
+Fixes from the review of Sprint 4, on top of the section below; no new features. Manual browser checks: the
+"Review fixes" section of [docs/sprint4-manual-test-checklist.md](docs/sprint4-manual-test-checklist.md).
+
+### Changed
+
+- **Grading too early (US-11).** Grading a task with nothing handed in made it GRADED, and `SubmissionService` then
+  refused the student's work with `SUBMISSION_ALREADY_GRADED` although the deadline had not passed. Now such a task
+  is graded only when the assignment has no deadline, the deadline has passed by the shared clock, or the assignment
+  is CLOSED; otherwise 409 `GRADE_TOO_EARLY` "Студент ещё может сдать работу до ДД.ММ.ГГГГ ЧЧ:ММ". The check runs
+  under the task's row lock. At the deadline itself it is still too early, as a hand-in then is on time. Handed-in
+  work is graded at any time; re-grading is unchanged. In the grading dialog "Сохранить" is disabled with the reason
+  for such a student, and "Следующий студент" just moves on without saving.
+- **Moving a deadline never makes on-time work late (US-10).** The deadline sync recomputed `tasks.late` both ways,
+  so moving a deadline earlier marked work handed in on time as late. Now a deadline change can only clear it: new
+  late = old late AND `submitted_at` after the new deadline. An extension (or removing the deadline) forgives late
+  work, and moving the deadline back does not mark it late again. Hand-ins after the change are judged by the current
+  deadline as usual. The 24-hour reminder is still cleared only when the deadline moves later.
+- **Max score guard (US-11).** `PATCH /api/v1/assignments/{id}` refuses a `maxScore` below existing grades of the
+  assignment with 400 `MAX_SCORE_BELOW_GRADES` "N оценок выше нового максимума — сначала измените их" (the noun agrees
+  with N). Clearing `maxScore` is allowed while every grade is within 0..1000. The edit dialog shows the message
+  under the field.
+- **Closed assignments are not overdue (US-12).** The OVERDUE condition (the "Просрочено" filter and counter) counts
+  only tasks of ACTIVE assignments; tasks without an assignment are unchanged. A never-handed-in task of a CLOSED
+  assignment (for example closed because its document was deleted) shows the neutral chip "Задание закрыто" and is
+  neither overdue nor "к сдаче".
+- **Late enrollment (US-12, US-13).** A student who joined after an assignment's deadline used to get it as
+  "Просрочено" at once. `tasks.deadline_before_enrollment` is set by the hand-out when the deadline is before the
+  student's `enrolled_at`. Such tasks show "Срок прошёл до записи", are not overdue and get no reminder. With
+  `allow_late` the student can still hand in, marked late as usual. A deadline moved to the enrollment time or later
+  (or removed) clears the flag; a deadline change never sets it.
+- **Enrollment time from the shared clock.** `course_students.enrolled_at` is now `LocalDateTime.now(clock)` in the
+  app time zone, like deadlines, instead of the database's `now()`, so the two compare correctly.
+- **Tests:** each test connection pool has at most 3 connections (`maven-surefire-plugin`). Every `*PostgresTest`
+  class keeps its own context and pool for the whole run, and with 10 connections each they exceeded PostgreSQL's
+  default `max_connections` of 100.
+
+### Database (applied automatically at startup, safe with existing data)
+
+| Change | How existing rows are handled |
+|---|---|
+| `tasks.deadline_before_enrollment` | NOT NULL with `DEFAULT false`; then `DeadlineBeforeEnrollmentMigration` sets it once |
+
+`DeadlineBeforeEnrollmentMigration` sets the flag for assignment tasks whose deadline is before the student's
+`course_students.enrolled_at`; without an enrollment row or `enrolled_at` it stays false. It runs once per database:
+it then writes a marker comment on the column, so a restart never sets the flag again where a deadline change cleared
+it. The backfill and the marker are in one transaction.
+
+### Tests
+
+551 backend tests, 70 of them on PostgreSQL. New: `GradingDeadlinePostgresTest` (grading too early, under the real
+row lock), `TaskOverduePostgresTest` (closed assignments, late enrollment, reminders, the migration); new cases in
+`TaskSubmissionStatusPostgresTest` (late only cleared), `GradingPostgresTest`, `AssignmentEditTest` and
+`GradingServiceTest`. Both new error codes have Russian texts in `CODE_MESSAGES`; all 85 error codes and all 32 audit
+actions have Russian texts.
+
+### Known limitations
+
+- `GRADE_TOO_EARLY` follows the deadline only. For an assignment that accepts late work, grading a not-handed-in task
+  after the deadline still makes it GRADED, which then refuses a late hand-in.
+- The migration takes the current `enrolled_at`. A student who left a course and re-enrolled after a deadline gets
+  that task marked "Срок прошёл до записи" although they were enrolled while it was open.
+- The grading dialog decides "too early" by the browser's clock; the server's 409 is what counts.
+
+
 ## Sprint 4 — Submissions, grading, tracking, reminders
 
 US-10 Submit Assignment Work, US-11 Grade and Give Feedback, US-12 Track My Assignments, US-13 Deadline Reminders.
@@ -299,7 +365,6 @@ deadline-extraction call, no longer a cut-off. Update your local `application.ym
 - Storage encryption: without `STORAGE_ENCRYPTION_KEY` the local files stay plain (the startup log warns). The key
   cannot be changed yet: files written with it are unreadable without it, so keep a backup. Tesseract's temporary
   page images during OCR are plain files in the system temp folder, deleted after recognition.
-- Deadline changes are not yet sent to students (the `AssignmentEvents` hook is empty until Sprint 4).
 - The PostgreSQL tests (`*PostgresTest`, see README "Тесты") run in CI and locally only on request against
   `doc_assistant_test`, not in the normal local build. The upgrade check above used a small hand-made data set, not
   a copy of a real database.

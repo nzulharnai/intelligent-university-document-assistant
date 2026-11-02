@@ -1,5 +1,7 @@
 package com.university.docassistant.service;
 
+import java.time.LocalDateTime;
+import java.time.Clock;
 import com.university.docassistant.dto.CourseDtos.CourseDetailsResponse;
 import com.university.docassistant.dto.CourseDtos.CourseResponse;
 import com.university.docassistant.dto.CourseDtos.CreateCourseRequest;
@@ -51,6 +53,7 @@ public class CourseService {
     private final AuditService auditService;
     private final JoinAttemptLimiter joinAttemptLimiter;
     private final CoursePrivacyRemask privacyRemask;
+    private final Clock clock;
 
     static final String COURSE_NOT_FOUND = "Курс не найден";
     static final String TEACHER_ROLE_PENDING_MESSAGE =
@@ -204,7 +207,7 @@ public class CourseService {
 
     /** Idempotent: an already enrolled student is left as is. New students get the course's tasks. */
     private void enrollStudent(User actor, Course course, User student) {
-        if (enrollmentRepository.enroll(course.getId(), student.getId()) > 0) {
+        if (enrollmentRepository.enroll(course.getId(), student.getId(), LocalDateTime.now(clock)) > 0) {
             int tasks = assignmentService.handOut(course.getId());
             auditService.record(actor.getEmail(), AuditService.STUDENT_ENROLLED,
                     student.getEmail() + " in course " + course.getId());

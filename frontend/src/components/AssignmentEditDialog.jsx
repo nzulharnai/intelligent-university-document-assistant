@@ -1,11 +1,11 @@
 import { useId, useState } from 'react'
 import { Info, Pencil } from 'lucide-react'
-import api from '../api/axios'
+import api, { describeError } from '../api/axios'
 import { useToast } from '../context/ToastContext'
 import useConfirm from '../hooks/useConfirm'
 import Button from './ui/Button'
 import Dialog, { DialogActions } from './ui/Dialog'
-import { checkboxClass, controlClass as inputClass, hintClass, labelClass } from './ui/styles'
+import { checkboxClass, controlClass as inputClass, controlErrorClass, errorTextClass, hintClass, labelClass } from './ui/styles'
 
 // The backend keeps deadlines as wall-clock time of the university (no zone), like the datetime-local input.
 const toInputValue = (deadline) => (deadline ? deadline.slice(0, 16) : '')
@@ -27,6 +27,8 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
     maxScore: assignment.maxScore == null ? '' : String(assignment.maxScore),
   })
   const [saving, setSaving] = useState(false)
+  // MAX_SCORE_BELOW_GRADES from the server, shown under the field until the value changes.
+  const [maxScoreError, setMaxScoreError] = useState('')
 
   const published = assignment.status !== 'DRAFT'
   const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }))
@@ -56,7 +58,11 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
       onSaved?.(data)
       onClose()
     } catch (err) {
-      notifyError(err)
+      if (err?.response?.data?.code === 'MAX_SCORE_BELOW_GRADES') {
+        setMaxScoreError(describeError(err).message)
+      } else {
+        notifyError(err)
+      }
     } finally {
       setSaving(false)
     }
@@ -97,12 +103,18 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
                 max={1000}
                 step={1}
                 value={form.maxScore}
-                onChange={update('maxScore')}
+                onChange={(event) => {
+                  setMaxScoreError('')
+                  update('maxScore')(event)
+                }}
                 placeholder="Без баллов"
+                aria-invalid={Boolean(maxScoreError)}
                 aria-describedby={`${titleId}-score-hint`}
-                className={`${inputClass} tabular-nums`}
+                className={`${inputClass} tabular-nums ${maxScoreError ? controlErrorClass : ''}`}
               />
-              <p id={`${titleId}-score-hint`} className={hintClass}>От 1 до 1000; пусто — задание без баллов.</p>
+              <p id={`${titleId}-score-hint`} className={maxScoreError ? errorTextClass : hintClass} role={maxScoreError ? 'alert' : undefined}>
+                {maxScoreError || 'От 1 до 1000; пусто — задание без баллов.'}
+              </p>
             </div>
             <label className="flex cursor-pointer items-start gap-2.5 self-start rounded-control border border-line-strong bg-surface px-3 py-2.5 text-sm text-fg sm:mt-7 has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-ring">
               <input

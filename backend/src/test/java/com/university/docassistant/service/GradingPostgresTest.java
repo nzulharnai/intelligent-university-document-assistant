@@ -149,6 +149,16 @@ class GradingPostgresTest {
         assertThat(submissions.findViewsByTaskId(anna.getId())).hasSize(3);
     }
 
+    @Test
+    void gradesAboveANewMaxScoreAreCounted() {
+        // Глеб has 10; the others have no grade, which never counts.
+        assertThat(tasks.countScoresAbove(lab.getId(), BigDecimal.valueOf(9))).isEqualTo(1);
+        assertThat(tasks.countScoresAbove(lab.getId(), BigDecimal.TEN)).as("equal to the max is fine").isZero();
+        assertThat(tasks.countScoresAbove(lab.getId(), BigDecimal.valueOf(1_000))).isZero();
+        tasks.grade(anna.getId(), new BigDecimal("9.5"), null, DEADLINE, em.find(User.class, teacher.getId()));
+        assertThat(tasks.countScoresAbove(lab.getId(), BigDecimal.valueOf(9))).isEqualTo(2);
+    }
+
     private List<String> names(String filter) {
         return tasks.findGradingRows(lab.getId(), filter, PageRequest.of(0, 50)).getContent().stream()
                 .map(GradingRow::studentFullName).toList();
@@ -157,7 +167,7 @@ class GradingPostgresTest {
     private Task task(String name, TaskStatus status, LocalDateTime submittedAt, boolean late) {
         User student = persist(User.builder().email(UUID.randomUUID() + "@uni.kz").fullName(name)
                 .role(Role.ROLE_STUDENT).createdAt(LocalDateTime.now()).build());
-        enrollments.enroll(course.getId(), student.getId());
+        enrollments.enroll(course.getId(), student.getId(), LocalDateTime.now());
         return persist(Task.builder().title(lab.getTitle()).deadline(DEADLINE).status(status).course(course)
                 .assignment(lab).user(student).submittedAt(submittedAt).late(late)
                 .score(status == TaskStatus.GRADED ? BigDecimal.TEN : null).build());

@@ -28,12 +28,24 @@ function scoreProblem(value, max) {
 }
 
 /**
+ * Nothing handed in and the student may still hand in (deadline not passed, assignment not closed): grading now
+ * would lock them out, and the server answers 409 GRADE_TOO_EARLY. Returns the reason to show, or ''.
+ */
+function tooEarlyReason(student, deadline, assignmentStatus) {
+  if (student.submittedAt || !deadline || assignmentStatus === 'CLOSED') return ''
+  if (Date.now() > new Date(deadline).getTime()) return ''
+  return `Студент ещё может сдать работу до ${formatDateTime(deadline)}. Оценить без работы можно после срока или после закрытия задания.`
+}
+
+/**
  * Grades one student's task (PUT /tasks/{id}/grade): the files of their current hand-in, a score with the
  * assignment's max shown, and feedback. "Следующий студент" saves a changed grade and moves on, for fast grading;
  * "Снять оценку" (after a ConfirmDialog) returns the task to "Сдано" (or "Не начато" without a hand-in).
+ * A student with nothing handed in before the deadline cannot be graded yet: "Сохранить" is disabled with the reason,
+ * and "Следующий студент" only moves on (no student is skipped, the next one shows the same reason if it applies).
  * {@code onSaved(student)} gets the task's new row.
  */
-export default function GradingDialog({ student, maxScore, onClose, onSaved, onNext }) {
+export default function GradingDialog({ student, maxScore, deadline, assignmentStatus, onClose, onSaved, onNext }) {
   const formId = useId()
   const { notifyError, showError, showSuccess } = useToast()
   const [confirm, confirmDialog] = useConfirm()
@@ -45,8 +57,10 @@ export default function GradingDialog({ student, maxScore, onClose, onSaved, onN
   const problem = scoreProblem(form.score, max)
   const dirty = form.score !== initial.score || form.feedback !== initial.feedback
   const graded = student.status === 'GRADED'
+  const tooEarly = tooEarlyReason(student, deadline, assignmentStatus)
 
   const save = async () => {
+    if (tooEarly) return null
     setTouched(true)
     if (problem) return null
     setBusy(true)
@@ -72,7 +86,7 @@ export default function GradingDialog({ student, maxScore, onClose, onSaved, onN
   }
 
   const next = async () => {
-    if (dirty && !(await save())) return
+    if (dirty && !tooEarly && !(await save())) return
     onNext()
   }
 
@@ -124,9 +138,15 @@ export default function GradingDialog({ student, maxScore, onClose, onSaved, onN
         <section className="mt-4" aria-labelledby={`${formId}-files`}>
           <h3 id={`${formId}-files`} className="text-sm font-semibold text-fg">Файлы текущей версии</h3>
           {student.files.length === 0 ? (
-            <p className="mt-1.5 rounded-control bg-page-alt px-3 py-2 text-small text-fg-muted">
-              Студент ничего не сдал. Можно поставить оценку и без работы, например 0.
-            </p>
+            tooEarly ? (
+              <p id={`${formId}-too-early`} role="status" className="mt-1.5 rounded-control bg-warning-soft px-3 py-2 text-small text-warning-fg">
+                {tooEarly}
+              </p>
+            ) : (
+              <p className="mt-1.5 rounded-control bg-page-alt px-3 py-2 text-small text-fg-muted">
+                Студент ничего не сдал. Можно поставить оценку и без работы, например 0.
+              </p>
+            )
           ) : (
             <ul className="mt-1.5 divide-y divide-line-subtle rounded-control border border-line">
               {student.files.map((file) => (
@@ -185,11 +205,19 @@ export default function GradingDialog({ student, maxScore, onClose, onSaved, onN
             )}
             <Button variant="outline" onClick={onClose} disabled={busy}>Отмена</Button>
             {onNext && (
-              <Button variant="secondary" onClick={next} disabled={busy} title={dirty ? 'Сохранить и открыть следующего студента' : 'Открыть следующего студента'}>
+              <Button variant="secondary" onClick={next} disabled={busy} title={dirty && !tooEarly ? 'Сохранить и открыть следующего студента' : 'Открыть следующего студента'}>
                 Следующий студент <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </Button>
             )}
-            <Button type="submit" loading={busy}>Сохранить</Button>
+            <Button
+              type="submit"
+              loading={busy}
+              disabled={Boolean(tooEarly)}
+              title={tooEarly || undefined}
+              aria-describedby={tooEarly ? `${formId}-too-early` : undefined}
+            >
+              Сохранить
+            </Button>
           </DialogActions>
         </form>
       </Dialog>

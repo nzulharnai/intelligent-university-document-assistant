@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -85,6 +86,10 @@ class AssignmentEditTest {
         when(assignments.findById(1L)).thenReturn(Optional.of(lab));
         when(assignments.findViewById(1L)).thenReturn(Optional.of(new AssignmentResponse(1L, "Lab 1", null, null,
                 AssignmentStatus.ACTIVE, 10L, "Algorithms", null, null, null, null, null, null, null, false, true, null)));
+    }
+
+    private static UpdateAssignmentRequest maxScore(Integer maxScore) {
+        return new UpdateAssignmentRequest("Lab 1", "AI text", OLD_DEADLINE, null, maxScore);
     }
 
     private static UpdateAssignmentRequest edit(String title, LocalDateTime deadline) {
@@ -148,6 +153,51 @@ class AssignmentEditTest {
             verify(tasks).syncWithAssignments(10L);
             // Deadline changes are reported only for ACTIVE assignments.
             verify(events, never()).deadlineChanged(any(), any(), any());
+        }
+
+        @Test
+        void loweringMaxScoreBelowExistingGradesIsRefusedAndNothingChanges() {
+            when(tasks.countScoresAbove(1L, BigDecimal.valueOf(5))).thenReturn(3L);
+
+            assertThatThrownBy(() -> service.update(1L, maxScore(5), "teacher@uni.kz"))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.MAX_SCORE_BELOW_GRADES);
+                        assertThat(ex.getMessage()).isEqualTo("3 оценки выше нового максимума — сначала измените их");
+                    });
+            assertThat(lab.getMaxScore()).isNull();
+            assertThat(lab.getTitle()).isEqualTo("Lab 1");
+            verify(assignments, never()).saveAndFlush(any());
+        }
+
+        @Test
+        void loweringMaxScoreAboveAllGradesIsSaved() {
+            when(tasks.countScoresAbove(1L, BigDecimal.valueOf(8))).thenReturn(0L);
+
+            service.update(1L, maxScore(8), "teacher@uni.kz");
+
+            assertThat(lab.getMaxScore()).isEqualTo(8);
+        }
+
+        @Test
+        void clearingMaxScoreIsAllowedWhileAllGradesAreWithin1000() {
+            lab.setMaxScore(10);
+            when(tasks.countScoresAbove(1L, BigDecimal.valueOf(1_000))).thenReturn(0L);
+
+            service.update(1L, maxScore(null), "teacher@uni.kz");
+
+            assertThat(lab.getMaxScore()).isNull();
+            verify(tasks).countScoresAbove(1L, BigDecimal.valueOf(1_000));
+        }
+
+        @Test
+        void gradesAreCountedInRussian() {
+            assertThat(AssignmentService.gradesText(1)).isEqualTo("1 оценка");
+            assertThat(AssignmentService.gradesText(4)).isEqualTo("4 оценки");
+            assertThat(AssignmentService.gradesText(5)).isEqualTo("5 оценок");
+            assertThat(AssignmentService.gradesText(12)).isEqualTo("12 оценок");
+            assertThat(AssignmentService.gradesText(21)).isEqualTo("21 оценка");
+            assertThat(AssignmentService.gradesText(112)).isEqualTo("112 оценок");
         }
 
         @Test

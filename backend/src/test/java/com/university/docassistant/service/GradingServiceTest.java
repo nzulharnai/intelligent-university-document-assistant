@@ -1,6 +1,7 @@
 package com.university.docassistant.service;
 
 import com.university.docassistant.dto.GradingDtos.GradeRequest;
+import com.university.docassistant.entity.AssignmentStatus;
 import com.university.docassistant.entity.Course;
 import com.university.docassistant.entity.Role;
 import com.university.docassistant.entity.TaskStatus;
@@ -118,7 +119,7 @@ class GradingServiceTest {
     void workThatWasNeverHandedInCanBeGradedZero() {
         handedIn(TaskStatus.PENDING, null, 10);
         when(tasks.findGradeTargetById(7L)).thenReturn(Optional.of(
-                new GradeTarget(7L, 10L, 3L, TaskStatus.PENDING, null, null, 10, "s@uni.kz")));
+                new GradeTarget(7L, 10L, 3L, TaskStatus.PENDING, null, null, 10, "s@uni.kz", null, AssignmentStatus.ACTIVE)));
 
         service.grade(7L, new GradeRequest(BigDecimal.ZERO, "Не сдано"), "t@uni.kz");
 
@@ -133,6 +134,54 @@ class GradingServiceTest {
 
         verify(tasks).grade(7L, new BigDecimal("9"), null, NOW, admin);
         verify(audit).record(eq("dean@uni.kz"), eq(AuditService.TASK_GRADED), contains("7 -> 9"));
+    }
+
+    @Test
+    void nothingHandedInBeforeTheDeadlineCannotBeGradedYet() {
+        notHandedIn(NOW.plusDays(1), AssignmentStatus.ACTIVE);
+
+        assertThatThrownBy(() -> service.grade(7L, new GradeRequest(BigDecimal.ZERO, null), "t@uni.kz"))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(ex.getCode()).isEqualTo(ErrorCodes.GRADE_TOO_EARLY);
+                    assertThat(ex.getMessage()).isEqualTo("Студент ещё может сдать работу до 25.10.2026 18:00");
+                });
+        verify(tasks).lockById(7L);
+        verify(tasks, never()).grade(anyLong(), any(), any(), any(), any());
+        verify(notifications, never()).taskGraded(anyLong());
+    }
+
+    @Test
+    void nothingHandedInAtTheDeadlineItselfIsStillTooEarly() {
+        notHandedIn(NOW, AssignmentStatus.ACTIVE);
+
+        assertThatThrownBy(() -> service.grade(7L, new GradeRequest(BigDecimal.ZERO, null), "t@uni.kz"))
+                .isInstanceOfSatisfying(ApiException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo(ErrorCodes.GRADE_TOO_EARLY));
+    }
+
+    @Test
+    void nothingHandedInIsGradedOnceTheDeadlinePassedOrWithoutOneOrWhenClosed() {
+        notHandedIn(NOW.minusMinutes(1), AssignmentStatus.ACTIVE);
+        service.grade(7L, new GradeRequest(BigDecimal.ZERO, null), "t@uni.kz");
+        notHandedIn(null, AssignmentStatus.ACTIVE);
+        service.grade(7L, new GradeRequest(BigDecimal.ONE, null), "t@uni.kz");
+        notHandedIn(NOW.plusDays(1), AssignmentStatus.CLOSED);
+        service.grade(7L, new GradeRequest(BigDecimal.TWO, null), "t@uni.kz");
+
+        verify(tasks).grade(7L, BigDecimal.ZERO, null, NOW, teacher);
+        verify(tasks).grade(7L, BigDecimal.ONE, null, NOW, teacher);
+        verify(tasks).grade(7L, BigDecimal.TWO, null, NOW, teacher);
+    }
+
+    @Test
+    void handedInWorkIsGradedBeforeTheDeadline() {
+        when(tasks.findGradeTargetById(7L)).thenReturn(Optional.of(new GradeTarget(7L, 10L, 3L, TaskStatus.SUBMITTED,
+                HANDED_IN, null, 10, "s@uni.kz", NOW.plusDays(3), AssignmentStatus.ACTIVE)));
+
+        service.grade(7L, new GradeRequest(BigDecimal.TEN, null), "t@uni.kz");
+
+        verify(tasks).grade(7L, BigDecimal.TEN, null, NOW, teacher);
     }
 
     @Test
@@ -151,7 +200,7 @@ class GradingServiceTest {
     @Test
     void legacyTasksAreNotGraded() {
         when(tasks.findGradeTargetById(8L)).thenReturn(Optional.of(
-                new GradeTarget(8L, null, null, TaskStatus.COMPLETED, null, null, null, "s@uni.kz")));
+                new GradeTarget(8L, null, null, TaskStatus.COMPLETED, null, null, null, "s@uni.kz", null, null)));
 
         assertThatThrownBy(() -> service.grade(8L, new GradeRequest(BigDecimal.ONE, null), "t@uni.kz"))
                 .isInstanceOfSatisfying(ApiException.class,
@@ -171,7 +220,8 @@ class GradingServiceTest {
     @Test
     void takingTheGradeBackWithoutAHandInReturnsTheTaskToPending() {
         when(tasks.findGradeTargetById(7L)).thenReturn(Optional.of(
-                new GradeTarget(7L, 10L, 3L, TaskStatus.GRADED, null, BigDecimal.ZERO, 10, "s@uni.kz")));
+                new GradeTarget(7L, 10L, 3L, TaskStatus.GRADED, null, BigDecimal.ZERO, 10, "s@uni.kz", null,
+                        AssignmentStatus.ACTIVE)));
 
         service.ungrade(7L, "t@uni.kz");
 
@@ -189,7 +239,14 @@ class GradingServiceTest {
     /** Task 7 of assignment 3 in course 10, handed in (unless PENDING) and in {@code status}. */
     private void handedIn(TaskStatus status, BigDecimal score, Integer maxScore) {
         when(tasks.findGradeTargetById(7L)).thenReturn(Optional.of(new GradeTarget(7L, 10L, 3L, status,
-                status == TaskStatus.PENDING ? null : HANDED_IN, score, maxScore, "s@uni.kz")));
+                status == TaskStatus.PENDING ? null : HANDED_IN, score, maxScore, "s@uni.kz", null,
+                AssignmentStatus.ACTIVE)));
+    }
+
+    /** Task 7 with nothing handed in; the assignment has {@code deadline} (null: none) and {@code status}. */
+    private void notHandedIn(LocalDateTime deadline, AssignmentStatus status) {
+        when(tasks.findGradeTargetById(7L)).thenReturn(Optional.of(new GradeTarget(7L, 10L, 3L, TaskStatus.PENDING,
+                null, null, 10, "s@uni.kz", deadline, status)));
     }
 
     private static void assertInvalidScore(Runnable call) {

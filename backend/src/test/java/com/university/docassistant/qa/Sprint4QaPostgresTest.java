@@ -182,8 +182,8 @@ class Sprint4QaPostgresTest {
             classmate = users.save(user(CLASSMATE, Role.ROLE_STUDENT));
             course = courses.save(Course.builder().title("Алгоритмы").code("INF345").teacher(teacher).build());
             otherCourse = courses.save(Course.builder().title("Базы данных").code("INF210").teacher(other).build());
-            enrollments.enroll(course.getId(), student.getId());
-            enrollments.enroll(course.getId(), classmate.getId());
+            enrollments.enroll(course.getId(), student.getId(), NOW.minusDays(30));
+            enrollments.enroll(course.getId(), classmate.getId(), NOW.minusDays(30));
         });
     }
 

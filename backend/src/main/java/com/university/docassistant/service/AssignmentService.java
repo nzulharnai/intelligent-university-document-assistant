@@ -28,6 +28,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -214,6 +215,7 @@ public class AssignmentService {
         if (request.title() == null || request.title().isBlank()) {
             throw ApiException.badRequest(ErrorCodes.ASSIGNMENT_TITLE_REQUIRED, "Укажите название задания");
         }
+        requireMaxScoreAboveGrades(id, request.maxScore());
         takeOver(assignment);
         LocalDateTime previousDeadline = assignment.getDeadline();
         assignment.setTitle(request.title().strip());
@@ -470,6 +472,28 @@ public class AssignmentService {
         log.info("User {} published {} assignment(s) of course {} ({} student task(s))",
                 user.getEmail(), drafts.size(), courseId, tasksCreated);
         return tasksCreated;
+    }
+
+    /**
+     * A new max_score must not go below grades already given: 400 MAX_SCORE_BELOW_GRADES naming how many are above it.
+     * Without a max score (null) grades may go up to GradingService.DEFAULT_MAX_SCORE (1000).
+     */
+    private void requireMaxScoreAboveGrades(Long assignmentId, Integer maxScore) {
+        BigDecimal max = maxScore == null ? GradingService.DEFAULT_MAX_SCORE : BigDecimal.valueOf(maxScore);
+        long above = taskRepository.countScoresAbove(assignmentId, max);
+        if (above > 0) {
+            throw ApiException.badRequest(ErrorCodes.MAX_SCORE_BELOW_GRADES,
+                    gradesText(above) + " выше нового максимума — сначала измените их");
+        }
+    }
+
+    /** "1 оценка", "3 оценки", "5 оценок", "21 оценка". */
+    static String gradesText(long count) {
+        long lastTwo = count % 100;
+        long last = count % 10;
+        String word = lastTwo >= 11 && lastTwo <= 14 ? "оценок"
+                : last == 1 ? "оценка" : last >= 2 && last <= 4 ? "оценки" : "оценок";
+        return count + " " + word;
     }
 
     private void auditClose(String actorEmail, Assignment assignment, String reason) {

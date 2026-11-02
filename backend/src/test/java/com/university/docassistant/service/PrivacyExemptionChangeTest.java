@@ -120,7 +120,7 @@ class PrivacyExemptionChangeTest {
         private final UserRepository users = mock(UserRepository.class);
         private final CourseService service = new CourseService(courses, mock(EnrollmentRepository.class),
                 mock(TaskRepository.class), users, mock(AssignmentService.class), access, audit,
-                new JoinAttemptLimiter(), remask);
+                new JoinAttemptLimiter(), remask, Clock.systemDefaultZone());
         private final User admin = User.builder().id(9L).email("dean@uni.kz").role(Role.ROLE_ADMIN).build();
         private final User newTeacher = User.builder().id(3L).email("new@uni.kz").role(Role.ROLE_TEACHER).build();
 
@@ -206,7 +206,7 @@ class PrivacyExemptionChangeTest {
         User student = User.builder().id(1L).email("student@uni.kz").role(Role.ROLE_STUDENT).build();
         TaskResponse task = new TaskResponse(5L, "Lab 1", null, null, TaskStatus.PENDING, 50L,
                 "Иванов_990101300013.pdf", 10L, "Algorithms", "INF345", null, null, 0L,
-                null, false, null, null, null, null, null);
+                null, false, null, null, null, null, null, false);
         when(tasks.findMyViews(eq(1L), eq("ALL"), any(), any(), any(Pageable.class))).thenReturn(new PageImpl<>(List.of(task)));
 
         AccessControlService access = mock(AccessControlService.class);

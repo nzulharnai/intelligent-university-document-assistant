@@ -97,7 +97,7 @@ class DeadlineReminderPostgresTest {
         student = persist(user("s@uni.kz", Role.ROLE_STUDENT));
         leaver = persist(user("left@uni.kz", Role.ROLE_STUDENT));
         course = persist(Course.builder().title("Алгоритмы").code("ALG").teacher(teacher).build());
-        enrollments.enroll(course.getId(), student.getId());
+        enrollments.enroll(course.getId(), student.getId(), LocalDateTime.now());
     }
 
     @Test

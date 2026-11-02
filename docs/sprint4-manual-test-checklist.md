@@ -122,3 +122,46 @@ tests cannot: the browser, real e-mail, the scheduler on its own clock, and an u
 - [ ] Existing submissions show as "Версия 1" with all their files.
 - [ ] Existing assignments accept late work and have no max score until the teacher sets one.
 - [ ] Every existing user has e-mail notifications on.
+- [ ] After the first start with the review fixes, the log shows `tasks.deadline_before_enrollment backfilled: N
+      task(s) whose deadline passed before enrollment`; a second start shows no such line. Tasks of students who
+      enrolled after the deadline show "Срок прошёл до записи" instead of "Просрочено".
+
+## Review fixes
+
+Use a new assignment of INF345 for each block unless it says otherwise; S3 is a new student account, not yet in
+INF345.
+
+**Grading too early (US-11)**
+- [ ] T creates "Лаб. 7" with a deadline tomorrow. On its grading page T opens S, who handed in nothing: the files
+      block says "Студент ещё может сдать работу до <срок>…" and "Сохранить" is disabled (its tooltip repeats it).
+- [ ] "Следующий студент" opens the next student without saving and without skipping anyone; a student without a
+      hand-in shows the same reason.
+- [ ] S hands in a file; T grades it at once (before the deadline): "Оценка сохранена".
+- [ ] T closes "Лаб. 7": S2 (nothing handed in) can now be graded, e.g. 0.
+- [ ] An assignment without a deadline: a student without a hand-in can be graded.
+- [ ] (API) `PUT /api/v1/tasks/{id}/grade` for a not-handed-in task before the deadline answers 409
+      `GRADE_TOO_EARLY`; the toast shows the Russian text with the date.
+
+**Deadline changes and "late" (US-10)**
+- [ ] S hands in "Лаб. 8" one hour after its deadline: "Сдано с опозданием". T moves the deadline a day later: the
+      mark disappears. T moves it back: the work stays on time.
+- [ ] S hands in "Лаб. 9" a day before its deadline. T moves the deadline to before that hand-in: still "Сдано",
+      not late. A student who hands in after the new deadline is "Сдано с опозданием".
+
+**Max score (US-11)**
+- [ ] On an assignment with max 10, T grades S 8. "Изменить" → "Максимальный балл" 5 → "Сохранить": under the field
+      "1 оценка выше нового максимума — сначала измените их", nothing saved; typing another value clears it.
+- [ ] Max 8 saves. Clearing the field (no points) saves.
+
+**Closed assignments and late enrollment (US-12, US-13)**
+- [ ] T creates "Лаб. 10" with a deadline yesterday (confirm the warning) — S sees "Просрочено". T closes it: S sees
+      the chip "Задание закрыто" with a lock and a plain date, no red edge; "Просрочено" and "К сдаче" counters drop
+      by one, and the "Просрочено" filter no longer lists it.
+- [ ] Same for an assignment closed by deleting its source document.
+- [ ] S3 joins INF345 with the invitation link after "Лаб. 11"'s deadline: "Лаб. 11" shows "Срок прошёл до записи"
+      (calendar icon), not "Просрочено"; the counters and the "Просрочено" filter do not count it. The tooltip says
+      work is still accepted (late work allowed) — S3 hands in: "Сдано с опозданием".
+- [ ] With late work not allowed, S3's hand-in is refused with the deadline in the message.
+- [ ] T moves "Лаб. 11"'s deadline to after S3's enrollment (e.g. next week): S3 sees a normal deadline. Moving it
+      back to yesterday makes it "Просрочено" for S3 (the flag is not set again).
+- [ ] No 24-hour reminder for S3 about a task whose deadline passed before they joined, nor for a closed assignment.

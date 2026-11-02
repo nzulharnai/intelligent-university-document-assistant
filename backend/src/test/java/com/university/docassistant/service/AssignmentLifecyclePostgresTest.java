@@ -122,7 +122,7 @@ class AssignmentLifecyclePostgresTest {
                 .category(DocumentCategory.LECTURE).type(DocumentType.OTHER).aiStatus(AiStatus.DONE)
                 .visibility(DocumentVisibility.COURSE_STUDENTS).course(course).owner(teacher)
                 .uploadedAt(LocalDateTime.now()).build());
-        enrollments.enroll(course.getId(), student.getId());
+        enrollments.enroll(course.getId(), student.getId(), LocalDateTime.now());
         when(access.currentUser("t@uni.kz")).thenReturn(teacher);
         when(access.authorizeCourse(teacher, course.getId(), Permission.MANAGE_ASSIGNMENTS)).thenReturn(course);
     }
@@ -141,7 +141,7 @@ class AssignmentLifecyclePostgresTest {
         assertThat(tasks.findViewsByUserId(student.getId(), PageRequest.of(0, 10)).getContent())
                 .as("hidden from the student while not enrolled").isEmpty();
 
-        enrollments.enroll(course.getId(), student.getId());
+        enrollments.enroll(course.getId(), student.getId(), LocalDateTime.now());
         assertThat(service.handOut(course.getId())).as("nothing new created").isZero();
         flushAndClear();
 
@@ -277,7 +277,7 @@ class AssignmentLifecyclePostgresTest {
         draft.setStatus(AssignmentStatus.DRAFT);
         flushAndClear();
         enrollments.unenroll(course.getId(), student.getId());
-        enrollments.enroll(course.getId(), student.getId());
+        enrollments.enroll(course.getId(), student.getId(), LocalDateTime.now());
 
         assertThat(service.handOut(course.getId())).isZero();
         assertThat(tasks.findAll()).isEmpty();
@@ -350,7 +350,7 @@ class AssignmentLifecyclePostgresTest {
         service.close(lab.getId(), "t@uni.kz");
         User late = persist(User.builder().email("late@uni.kz").fullName("Late").role(Role.ROLE_STUDENT)
                 .createdAt(LocalDateTime.now()).build());
-        enrollments.enroll(course.getId(), late.getId());
+        enrollments.enroll(course.getId(), late.getId(), LocalDateTime.now());
         service.handOut(course.getId());
         flushAndClear();
         assertThat(tasks.findAll()).as("closed: not handed out").hasSize(1);
