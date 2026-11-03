@@ -171,7 +171,7 @@ class DocumentOcrTest {
         }
     }
 
-    /** The background job: OCR -> (masking, chunks) -> classification -> deadline drafts. */
+    /** The background job: OCR -> (masking, chunks) -> classification -> deadlines. */
     @Nested
     class Job {
 

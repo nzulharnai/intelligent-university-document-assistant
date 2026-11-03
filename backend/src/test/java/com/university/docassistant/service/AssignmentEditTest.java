@@ -45,7 +45,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * US-08 step 2: the course teacher fixes AI mistakes in assignments. Edits reach the students' tasks without touching
+ * The course teacher fixes AI mistakes in assignments. Edits reach the students' tasks without touching
  * their statuses or submissions; only the course's teacher and ADMIN may edit, close or reopen. Uses the real
  * AccessControlService so the 403s are the real decisions.
  */
@@ -64,7 +64,7 @@ class AssignmentEditTest {
     private final AccessControlService access = new AccessControlService(users, courses, mock(DocumentRepository.class),
             enrollments, audit);
     private final AssignmentService service = new AssignmentService(assignments, tasks, courses,
-            mock(DocumentRepository.class), access, audit, events, false);
+            mock(DocumentRepository.class), access, audit, events);
 
     private final User teacher = User.builder().id(2L).email("teacher@uni.kz").role(Role.ROLE_TEACHER).build();
     private final User otherTeacher = User.builder().id(3L).email("other@uni.kz").role(Role.ROLE_TEACHER).build();
@@ -85,7 +85,7 @@ class AssignmentEditTest {
                 .status(AssignmentStatus.ACTIVE).course(course).sourceDocument(syllabus).build();
         when(assignments.findById(1L)).thenReturn(Optional.of(lab));
         when(assignments.findViewById(1L)).thenReturn(Optional.of(new AssignmentResponse(1L, "Lab 1", null, null,
-                AssignmentStatus.ACTIVE, 10L, "Algorithms", null, null, null, null, null, null, null, false, true, null)));
+                AssignmentStatus.ACTIVE, 10L, "Algorithms", null, null, null, null, false, true, null)));
     }
 
     private static UpdateAssignmentRequest maxScore(Integer maxScore) {
@@ -134,14 +134,12 @@ class AssignmentEditTest {
         }
 
         @Test
-        void editingADraftNeedsNoTaskSyncAndIsNotADeadlineChange() {
-            lab.setStatus(AssignmentStatus.DRAFT);
-
+        void removingTheDeadlineIsAllowedAndReachesTheTasks() {
             service.update(1L, edit("Lab 1", null), "teacher@uni.kz");
 
-            assertThat(lab.getDeadline()).isNull(); // A missing deadline is allowed.
-            verify(tasks, never()).syncWithAssignments(anyLong());
-            verify(events, never()).deadlineChanged(any(), any(), any());
+            assertThat(lab.getDeadline()).isNull();
+            verify(tasks).syncWithAssignments(10L);
+            verify(events).deadlineChanged(lab, OLD_DEADLINE, null);
         }
 
         @Test
@@ -261,13 +259,10 @@ class AssignmentEditTest {
         }
 
         @Test
-        void reopeningAnActiveAssignmentIsANoOpAndADraftCannotBeReopened() {
+        void reopeningAnActiveAssignmentIsANoOp() {
             service.reopen(1L, "teacher@uni.kz");
             verify(tasks, never()).fanOut(anyLong());
-
-            lab.setStatus(AssignmentStatus.DRAFT);
-            assertThatThrownBy(() -> service.reopen(1L, "teacher@uni.kz")).isInstanceOfSatisfying(ApiException.class,
-                    ex -> assertThat(ex.getCode()).isEqualTo(ErrorCodes.ASSIGNMENT_IS_DRAFT));
+            verify(audit, never()).record(anyString(), eq(AuditService.ASSIGNMENT_REOPENED), anyString());
         }
     }
 
@@ -286,7 +281,7 @@ class AssignmentEditTest {
 
             ArgumentCaptor<List<Assignment>> saved = ArgumentCaptor.forClass(List.class);
             verify(assignments).saveAll(saved.capture());
-            assertThat(saved.getValue()).containsExactly(lab); // Matched, not a new draft.
+            assertThat(saved.getValue()).containsExactly(lab); // Matched, not a new assignment.
             assertThat(lab.getTitle()).isEqualTo("Lab 1: sorting");
             assertThat(lab.getRequirements()).isEqualTo("Implement quicksort");
             assertThat(lab.getDeadline()).isEqualTo(NEW_DEADLINE);

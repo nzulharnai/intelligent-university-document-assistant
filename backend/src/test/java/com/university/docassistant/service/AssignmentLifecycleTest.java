@@ -75,7 +75,7 @@ class AssignmentLifecycleTest {
     private final AccessControlService access = mock(AccessControlService.class);
     private final AuditService audit = mock(AuditService.class);
     private final AssignmentService service = new AssignmentService(assignments, tasks, mock(CourseRepository.class),
-            mock(DocumentRepository.class), access, audit, mock(AssignmentEvents.class), false);
+            mock(DocumentRepository.class), access, audit, mock(AssignmentEvents.class));
 
     private final User teacher = User.builder().id(2L).email(TEACHER).role(Role.ROLE_TEACHER).build();
     private final Course course = Course.builder().id(10L).title("Algorithms").build();
@@ -157,9 +157,8 @@ class AssignmentLifecycleTest {
         @Test
         void partialAnalysisKeepsWhatItDidNotFindAndStillAddsWhatItFound() {
             Assignment published = assignment(1L, "Lab 1");
-            Assignment draft = assignment(2L, "Lab 2");
-            draft.setStatus(AssignmentStatus.DRAFT);
-            when(assignments.findBySourceDocumentId(50L)).thenReturn(List.of(published, draft));
+            Assignment untouched = assignment(2L, "Lab 2");
+            when(assignments.findBySourceDocumentId(50L)).thenReturn(List.of(published, untouched));
             activityOn();
 
             // Lab 1 and Lab 2 may sit in the part of the text the AI did not answer for.
@@ -167,7 +166,7 @@ class AssignmentLifecycleTest {
 
             assertThat(found).isEqualTo(1);
             assertThat(published.getStatus()).isEqualTo(AssignmentStatus.ACTIVE);
-            assertThat(draft.getStatus()).isEqualTo(AssignmentStatus.DRAFT);
+            assertThat(untouched.getStatus()).isEqualTo(AssignmentStatus.ACTIVE);
             verify(tasks, never()).deleteByAssignmentIdIn(anyList());
             verify(assignments, never()).deleteAllByIdInBatch(any());
             verify(audit, never()).record(any(), eq(AuditService.ASSIGNMENT_CLOSED), anyString());
@@ -264,7 +263,7 @@ class AssignmentLifecycleTest {
         void courseOfAssignment() {
             when(assignments.findCourseIdById(1L)).thenReturn(Optional.of(10L));
             when(assignments.findViewById(1L)).thenReturn(Optional.of(new AssignmentResponse(1L, "Lab 1", null, null,
-                    AssignmentStatus.CLOSED, 10L, "Algorithms", null, null, null, null, null, null, null, false, true, null)));
+                    AssignmentStatus.CLOSED, 10L, "Algorithms", null, null, null, null, false, true, null)));
         }
 
         @Test

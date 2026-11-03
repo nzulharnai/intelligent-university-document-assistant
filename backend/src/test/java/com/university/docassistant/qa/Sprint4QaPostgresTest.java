@@ -380,20 +380,13 @@ class Sprint4QaPostgresTest {
     class QaNot013 {
 
         @Test
-        @DisplayName("the 24-hour reminder goes out once, never for submitted, closed or draft work")
+        @DisplayName("the 24-hour reminder goes out once, never for submitted or closed work")
         void reminders() {
             Long due = taskOf(STUDENT, assignment("Лаб. 1", NOW.plusHours(10), true, null));
             Long handedIn = taskOf(STUDENT, assignment("Лаб. 2", NOW.plusHours(10), true, null));
             submit(handedIn, STUDENT);
             AssignmentResponse closed = assignment("Лаб. 3", NOW.plusHours(10), true, null);
             assignments.close(closed.id(), TEACHER);
-            // A draft is never handed out; even a task that somehow points at one gets no reminder.
-            Long draft = jdbc.queryForObject("INSERT INTO assignments (title, deadline, status, course_id, allow_late, "
-                    + "created_at) VALUES ('Черновик', ?, 'DRAFT', ?, true, now()) RETURNING id", Long.class,
-                    NOW.plusHours(10), course.getId());
-            jdbc.update("INSERT INTO tasks (title, deadline, status, course_id, user_id, assignment_id, late) "
-                    + "VALUES ('Черновик', ?, 'PENDING', ?, ?, ?, false)", NOW.plusHours(10), course.getId(),
-                    student.getId(), draft);
 
             // Лаб. 1 for both students, Лаб. 2 for the classmate only (the student handed it in).
             assertThat(reminders.sendDue()).isEqualTo(3);

@@ -33,6 +33,8 @@ import com.university.docassistant.repository.TaskRepository;
 import com.university.docassistant.repository.TaskSubmissionRepository;
 import com.university.docassistant.security.AccessControlService;
 import com.university.docassistant.security.Permission;
+import com.university.docassistant.entity.NotificationType;
+import org.springframework.dao.DataIntegrityViolationException;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,9 +58,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyCollection;
 
 /**
- * The same guarantees as {@link AssignmentLifecycleTest} and {@link AssignmentDraftTest}, against the real queries (native fanOut, JPQL activity and
+ * The same guarantees as {@link AssignmentLifecycleTest} and {@link AssignmentDuplicateTest}, against the real queries (native fanOut, JPQL activity and
  * enrollment filters) on PostgreSQL. Opt-in, so the normal build needs no database:
  * <pre>
  * mvnw.cmd test "-Dtest=*PostgresTest" "-Dsurefire.failIfNoSpecifiedTests=false"
@@ -235,90 +242,92 @@ class AssignmentLifecyclePostgresTest {
 
         service.close(worked.getId(), "t@uni.kz");
         flushAndClear();
-        assertThat(assignments.findStatusById(worked.getId())).contains(AssignmentStatus.CLOSED);
+        assertThat(assignments.findById(worked.getId()).orElseThrow().getStatus()).isEqualTo(AssignmentStatus.CLOSED);
         assertThat(tasks.findViewById(task.getId()).orElseThrow().assignmentStatus()).isEqualTo(AssignmentStatus.CLOSED);
     }
 
-    // ---------------- US-08: AI drafts ----------------
+    // ---------------- AI assignments: published at once (drafts removed at the teacher's request) ----------------
 
     @Test
-    void aiDraftsAreInvisibleToStudentsUntilPublished() {
-        service.replaceFromDocument(syllabus.getId(), course.getId(), List.of(
-                new TaskExtractDto("Lab 1", "Sorting", LocalDateTime.now().plusDays(7))));
-        flushAndClear();
-        Assignment draft = assignments.findBySourceDocumentId(syllabus.getId()).get(0);
-        assertThat(draft.getStatus()).isEqualTo(AssignmentStatus.DRAFT);
-
-        // Nowhere for the student: no task, not in the course or document list, not in their tasks or deadlines.
-        assertThat(tasks.findAll()).isEmpty();
-        assertThat(assignments.findViewsByCourseId(course.getId(), PageRequest.of(0, 10)).getContent()).isEmpty();
-        assertThat(assignments.findViewsBySourceDocumentId(syllabus.getId(), PageRequest.of(0, 10)).getContent()).isEmpty();
-        assertThat(tasks.findViewsByUserId(student.getId(), PageRequest.of(0, 10)).getContent()).isEmpty();
-        assertThat(tasks.findUpcomingViews(student.getId(), LocalDateTime.now(), PageRequest.of(0, 10)).getContent())
-                .isEmpty();
-        // The teacher's review list has it.
-        assertThat(assignments.findDraftViewsByCourseId(course.getId(), PageRequest.of(0, 10)).getContent())
-                .extracting(view -> view.id()).containsExactly(draft.getId());
-
-        service.publish(draft.getId(), "t@uni.kz");
+    void aiAssignmentsAreActiveHandedOutAndAnnounced() {
+        List<TaskExtractDto> found = List.of(new TaskExtractDto("Lab 1", "Sorting", LocalDateTime.now().plusDays(7)));
+        service.replaceFromDocument(syllabus.getId(), course.getId(), found);
         flushAndClear();
 
+        Assignment lab = assignments.findBySourceDocumentId(syllabus.getId()).get(0);
+        assertThat(lab.getStatus()).isEqualTo(AssignmentStatus.ACTIVE);
         assertThat(tasks.findAll()).extracting(task -> task.getUser().getId()).containsExactly(student.getId());
         assertThat(assignments.findViewsByCourseId(course.getId(), PageRequest.of(0, 10)).getContent())
-                .extracting(view -> view.status()).containsExactly(AssignmentStatus.ACTIVE);
+                .extracting(AssignmentResponse::sourceDocumentId).containsExactly(syllabus.getId());
         assertThat(tasks.findUpcomingViews(student.getId(), LocalDateTime.now(), PageRequest.of(0, 10)).getContent())
                 .hasSize(1);
-        assertThat(assignments.findDraftViewsByCourseId(course.getId(), PageRequest.of(0, 10)).getContent()).isEmpty();
-    }
+        verify(notifications).notify(eq(List.of(student.getId())), eq(NotificationType.ASSIGNMENT_PUBLISHED),
+                eq("Новое задание: Lab 1"), anyString(), anyString());
 
-    @Test
-    void enrollingLaterNeverHandsOutDrafts() {
-        Assignment draft = fromSyllabus("Draft lab");
-        draft.setStatus(AssignmentStatus.DRAFT);
+        // The same analysis again: nothing new, no second announcement.
+        service.replaceFromDocument(syllabus.getId(), course.getId(), found);
         flushAndClear();
-        enrollments.unenroll(course.getId(), student.getId());
-        enrollments.enroll(course.getId(), student.getId(), LocalDateTime.now());
-
-        assertThat(service.handOut(course.getId())).isZero();
-        assertThat(tasks.findAll()).isEmpty();
+        assertThat(assignments.findBySourceDocumentId(syllabus.getId())).extracting(Assignment::getId)
+                .containsExactly(lab.getId());
+        verify(notifications, times(1)).notify(anyCollection(), eq(NotificationType.ASSIGNMENT_PUBLISHED),
+                anyString(), anyString(), anyString());
     }
 
     @Test
-    void reAnalysisReplacesDraftsAndKeepsWorkedOnPublishedAssignments() {
-        Assignment published = fromSyllabus("Lab 1");
+    void reAnalysisReplacesUntouchedAssignmentsAndClosesWorkedOnOnes() {
+        Assignment worked = fromSyllabus("Lab 1");
         service.handOut(course.getId());
-        workOn(onlyTaskOf(published));
-        service.replaceFromDocument(syllabus.getId(), course.getId(), List.of(new TaskExtractDto("Lab 2", null, null)));
+        workOn(onlyTaskOf(worked));
+        service.replaceFromDocument(syllabus.getId(), course.getId(), List.of(
+                new TaskExtractDto("Lab 1", null, null), new TaskExtractDto("Lab 2", null, null)));
         flushAndClear();
-        Long firstDraft = assignments.findDraftViewsByCourseId(course.getId(), PageRequest.of(0, 10)).getContent()
-                .get(0).id();
+        Long lab2 = assignments.findBySourceDocumentId(syllabus.getId()).stream()
+                .filter(assignment -> assignment.getTitle().equals("Lab 2")).findFirst().orElseThrow().getId();
 
-        // The AI words both differently now: the draft is simply replaced; the worked-on lab is closed, not deleted.
+        // The AI words both differently now: the untouched one is replaced, the worked-on one closed, not deleted.
         service.replaceFromDocument(syllabus.getId(), course.getId(), List.of(new TaskExtractDto("Lab two", null, null)));
         flushAndClear();
 
-        assertThat(assignments.findById(firstDraft)).isEmpty();
-        assertThat(assignments.findDraftViewsByCourseId(course.getId(), PageRequest.of(0, 10)).getContent())
-                .extracting(view -> view.title()).containsExactly("Lab two");
-        assertThat(assignments.findStatusById(published.getId())).contains(AssignmentStatus.CLOSED);
+        assertThat(assignments.findById(lab2)).isEmpty();
+        assertThat(assignments.findById(worked.getId()).orElseThrow().getStatus()).isEqualTo(AssignmentStatus.CLOSED);
+        assertThat(assignments.findViewsByCourseId(course.getId(), PageRequest.of(0, 10)).getContent())
+                .extracting(AssignmentResponse::title, AssignmentResponse::status)
+                .containsExactlyInAnyOrder(tuple("Lab 1", AssignmentStatus.CLOSED), tuple("Lab two", AssignmentStatus.ACTIVE));
         assertThat(submissions.count()).isEqualTo(1);
     }
 
-    /** A database created before DRAFT existed has a check constraint without it; the startup migration fixes that. */
+    /**
+     * A database from before the drafts were removed: its check constraint still allows the old status and it has the
+     * old duplicate mark column. The startup migration publishes the old drafts and hands them out, once.
+     */
     @Test
-    void migrationLetsAnOldSchemaAcceptDrafts() {
+    void migrationPublishesOldDraftRowsAndHandsThemOut() {
         jdbc.execute("ALTER TABLE assignments DROP CONSTRAINT IF EXISTS assignments_status_check");
-        jdbc.execute("ALTER TABLE assignments ADD CONSTRAINT assignments_status_check CHECK (status IN ('ACTIVE', 'CLOSED'))");
-        Assignment kept = fromSyllabus("Published before the upgrade");
-
-        new AssignmentStatusMigration(jdbc).run(null);
-        Assignment draft = fromSyllabus("New draft");
-        draft.setStatus(AssignmentStatus.DRAFT);
+        jdbc.execute("ALTER TABLE assignments ADD CONSTRAINT assignments_status_check "
+                + "CHECK (status IN ('DRAFT', 'ACTIVE', 'CLOSED'))");
+        jdbc.execute("ALTER TABLE assignments ADD COLUMN duplicate_of_id BIGINT");
+        Assignment closed = fromSyllabus("Closed before the upgrade");
+        closed.setStatus(AssignmentStatus.CLOSED);
         flushAndClear();
+        Long oldDraft = jdbc.queryForObject("INSERT INTO assignments (title, status, course_id, source_document_id, "
+                + "allow_late, created_at) VALUES ('Old AI lab', 'DRAFT', ?, ?, true, now()) RETURNING id", Long.class,
+                course.getId(), syllabus.getId());
 
-        assertThat(assignments.findStatusById(draft.getId())).contains(AssignmentStatus.DRAFT);
-        assertThat(assignments.findStatusById(kept.getId())).as("existing rows keep their status")
-                .contains(AssignmentStatus.ACTIVE);
+        migrate();
+
+        assertThat(jdbc.queryForObject("SELECT status FROM assignments WHERE id = ?", String.class, oldDraft))
+                .isEqualTo("ACTIVE");
+        assertThat(jdbc.queryForObject("SELECT status FROM assignments WHERE id = ?", String.class, closed.getId()))
+                .as("other rows keep their status").isEqualTo("CLOSED");
+        assertThat(tasks.findAll()).extracting(task -> task.getAssignment().getId(), task -> task.getUser().getId())
+                .containsExactly(tuple(oldDraft, student.getId()));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.columns WHERE table_name = "
+                + "'assignments' AND column_name = 'duplicate_of_id'", Integer.class)).isZero();
+
+        migrate();                                                   // Idempotent: nothing more to do.
+        assertThat(tasks.findAll()).hasSize(1);
+        assertThatThrownBy(() -> jdbc.update("UPDATE assignments SET status = 'DRAFT' WHERE id = ?", oldDraft))
+                .as("the old status is no longer accepted").isInstanceOf(DataIntegrityViolationException.class);
     }
 
     // ---------------- US-08 step 2: editing, close/reopen ----------------
@@ -362,31 +371,28 @@ class AssignmentLifecyclePostgresTest {
                 .containsExactlyInAnyOrder(student.getId(), late.getId());
     }
 
-    // ---------------- US-08 step 3: duplicate drafts ----------------
+    // ---------------- Duplicates: skipped, never across courses ----------------
 
     @Test
-    void draftIsFlaggedOnlyAgainstItsOwnCourseAndTheFlagGoesWithTheOriginal() {
+    void anExactDuplicateIsSkippedAndADifferentNumberIsCreated() {
         Course other = persist(Course.builder().title("Databases").code("DB").teacher(teacher).build());
-        persist(Assignment.builder().title("Лабораторная работа 2").status(AssignmentStatus.ACTIVE).course(other).build());
-        Assignment original = persist(Assignment.builder().title("Лабораторная работа №1").status(AssignmentStatus.ACTIVE)
+        LocalDateTime deadline = LocalDateTime.of(2026, 12, 1, 18, 0);
+        persist(Assignment.builder().title("Лабораторная работа №2").deadline(deadline).status(AssignmentStatus.ACTIVE)
+                .course(other).build());
+        persist(Assignment.builder().title("Лабораторная работа №1").deadline(deadline).status(AssignmentStatus.ACTIVE)
                 .course(course).build());
         flushAndClear();
 
         service.replaceFromDocument(syllabus.getId(), course.getId(), List.of(
-                new TaskExtractDto("Лаб. 1", null, null), new TaskExtractDto("Лаб. 2", null, null)));
+                new TaskExtractDto("Лаб. 1", null, deadline.withHour(23).withMinute(59)),   // Same title, same day.
+                new TaskExtractDto("Лаб. 2", null, deadline)));     // Another number; the same lab of another course.
         flushAndClear();
 
-        List<AssignmentResponse> drafts = assignments.findDraftViewsByCourseId(course.getId(), PageRequest.of(0, 10))
-                .getContent();
-        assertThat(drafts).extracting(AssignmentResponse::title, AssignmentResponse::duplicateOfId)
-                .containsExactlyInAnyOrder(tuple("Лаб. 1", original.getId()), tuple("Лаб. 2", null));
-
-        // Through the service, as the app deletes: the original was handed out with the drafts' analysis, and
-        // tasks.assignment_id (no cascade, student work is never dropped silently) needs its tasks gone first.
-        service.delete(original.getId(), "t@uni.kz");
-        flushAndClear();
-        assertThat(assignments.findDraftViewsByCourseId(course.getId(), PageRequest.of(0, 10)).getContent())
-                .extracting(AssignmentResponse::duplicateOfId).containsOnlyNulls();
+        assertThat(assignments.findViewsByCourseId(course.getId(), PageRequest.of(0, 10)).getContent())
+                .extracting(AssignmentResponse::title)
+                .containsExactlyInAnyOrder("Лабораторная работа №1", "Лаб. 2");
+        verify(notifications).notify(anyCollection(), eq(NotificationType.ASSIGNMENT_PUBLISHED),
+                eq("Новое задание: Лаб. 2"), anyString(), anyString());
     }
 
     // ---------------- US-09: masked copies ----------------
@@ -544,6 +550,12 @@ class AssignmentLifecyclePostgresTest {
         em.persist(entity);
         em.flush();
         return entity;
+    }
+
+    private void migrate() {
+        em.flush();
+        new AssignmentStatusMigration(jdbc, tasks).run(null);
+        em.clear();
     }
 
     private void flushAndClear() {

@@ -1,6 +1,5 @@
 package com.university.docassistant.util;
 
-import com.university.docassistant.util.AssignmentTitles.WorkRef;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -16,11 +15,10 @@ class AssignmentTitlesTest {
     @ParameterizedTest
     @ValueSource(strings = {
             "Лабораторная работа 1", "Лабораторная работа №1", "Лабораторная работа № 1.", "лаб. работа №1",
-            "Лаб. 1", "ЛАБ.№1", "лаб1", "Лаба 1", "Лабораторная  работа   1", "1 лабораторная работа",
+            "Лаб. 1", "ЛАБ.№1", "лаб1", "Лаба 1", "Лабораторная  работа   1",
             "Лабораторной работы №1"})
     void labVariantsAreTheSame(String title) {
-        String normalized = AssignmentTitles.normalize(title);
-        assertThat(AssignmentTitles.workRef(normalized)).contains(new WorkRef("лабораторная работа", 1));
+        assertThat(AssignmentTitles.normalize(title)).isEqualTo("лабораторная работа 1");
     }
 
     @Test
@@ -50,37 +48,54 @@ class AssignmentTitlesTest {
     }
 
     @Test
+    void sameNormalizedTitleAndDeadlineOnTheSameDayIsTheSameAssignment() {
+        assertThat(AssignmentTitles.sameAssignment("Лаб. работа №1", OCT_20,
+                "Лабораторная работа 1", OCT_20.withHour(23).withMinute(59))).isTrue();
+        assertThat(AssignmentTitles.sameAssignment("Лаб. 1", OCT_20.withHour(0).withMinute(0),
+                "ЛАБ.№1", OCT_20)).as("any time of the same day").isTrue();
+    }
+
+    @Test
+    void anotherDayIsAnotherAssignment() {
+        assertThat(AssignmentTitles.sameAssignment("Лаб. 1", OCT_20, "Лаб. 1", OCT_20.plusDays(1))).isFalse();
+        assertThat(AssignmentTitles.sameAssignment("Лаб. 1", OCT_20.withHour(23).withMinute(59),
+                "Лаб. 1", OCT_20.plusDays(1).withHour(0).withMinute(1))).as("a minute apart, another day").isFalse();
+    }
+
+    @Test
+    void withoutDeadlinesOnlyBothMissingMatch() {
+        assertThat(AssignmentTitles.sameAssignment("СРС №2", null, "С.Р.С. 2", null)).isTrue();
+        assertThat(AssignmentTitles.sameAssignment("СРС №2", null, "СРС 2", OCT_20)).isFalse();
+        assertThat(AssignmentTitles.sameAssignment("СРС №2", OCT_20, "СРС 2", null)).isFalse();
+    }
+
+    @Test
     void differentNumbersAreNeverDuplicates() {
-        assertThat(AssignmentTitles.likelySame("Лаб. 1", OCT_20, "Лаб. 2", OCT_20)).isFalse();
-        assertThat(AssignmentTitles.likelySame("Лабораторная работа №1", null, "Лабораторная работа №12", null)).isFalse();
-        assertThat(AssignmentTitles.likelySame("СРС 1", OCT_20, "СРС 2", OCT_20)).isFalse();
+        assertThat(AssignmentTitles.sameAssignment("Лаб. 1", OCT_20, "Лаб. 2", OCT_20)).isFalse();
+        assertThat(AssignmentTitles.sameAssignment("Лабораторная работа №1", null, "Лабораторная работа №12", null))
+                .isFalse();
+        assertThat(AssignmentTitles.sameAssignment("СРС 1", OCT_20, "СРС 2", OCT_20)).isFalse();
+    }
+
+    @Test
+    void wordOrderIsKeptSoANumberInFrontIsAnotherTitle() {
+        assertThat(AssignmentTitles.normalize("1 лабораторная работа")).isEqualTo("1 лабораторная работа");
+        assertThat(AssignmentTitles.sameAssignment("1 лабораторная работа", OCT_20, "Лабораторная работа 1", OCT_20))
+                .isFalse();
     }
 
     @Test
     void differentKindsWithTheSameNumberAreNotDuplicates() {
-        assertThat(AssignmentTitles.likelySame("Лаб. 1", OCT_20, "Практика 1", OCT_20)).isFalse();
-        assertThat(AssignmentTitles.likelySame("СРС 1", OCT_20, "СРСП 1", OCT_20)).isFalse();
+        assertThat(AssignmentTitles.sameAssignment("Лаб. 1", OCT_20, "Практика 1", OCT_20)).isFalse();
+        assertThat(AssignmentTitles.sameAssignment("СРС 1", OCT_20, "СРСП 1", OCT_20)).isFalse();
     }
 
     @Test
-    void sameNormalizedTitleIsADuplicateWhateverTheDeadline() {
-        assertThat(AssignmentTitles.likelySame("Лаб. работа №1", null, "Лабораторная работа 1", OCT_20)).isTrue();
-    }
-
-    @Test
-    void sameKindAndNumberWithDifferentWordingNeedsDeadlinesWithinADay() {
-        String syllabus = "Лабораторная работа 1";
-        String assignmentFile = "Лаб. 1: сортировка массивов";
-        assertThat(AssignmentTitles.likelySame(syllabus, OCT_20, assignmentFile, OCT_20.plusHours(23))).isTrue();
-        assertThat(AssignmentTitles.likelySame(syllabus, OCT_20, assignmentFile, OCT_20.minusDays(1))).isTrue();
-        assertThat(AssignmentTitles.likelySame(syllabus, OCT_20, assignmentFile, OCT_20.plusDays(2))).isFalse();
-        assertThat(AssignmentTitles.likelySame(syllabus, OCT_20, assignmentFile, null)).isFalse();
-    }
-
-    @Test
-    void unrelatedTitlesAreNotDuplicatesAndEmptyTitlesNeverMatch() {
-        assertThat(AssignmentTitles.likelySame("Эссе по истории", OCT_20, "Курсовой проект", OCT_20)).isFalse();
-        assertThat(AssignmentTitles.likelySame("!!!", null, "???", null)).isFalse();
+    void differentWordingIsNotADuplicateAndEmptyTitlesNeverMatch() {
+        assertThat(AssignmentTitles.sameAssignment("Лабораторная работа 1", OCT_20, "Лаб. 1: сортировка массивов",
+                OCT_20)).as("only the same normalized title counts").isFalse();
+        assertThat(AssignmentTitles.sameAssignment("Эссе по истории", OCT_20, "Курсовой проект", OCT_20)).isFalse();
+        assertThat(AssignmentTitles.sameAssignment("!!!", null, "???", null)).isFalse();
         assertThat(AssignmentTitles.normalize(null)).isEmpty();
     }
 

@@ -121,7 +121,6 @@ class DeadlineReminderPostgresTest {
         task("Сдано", student, TaskStatus.SUBMITTED, soon, AssignmentStatus.ACTIVE);
         task("Оценено", student, TaskStatus.GRADED, soon, AssignmentStatus.ACTIVE);
         task("Закрыто", student, TaskStatus.PENDING, soon, AssignmentStatus.CLOSED);
-        task("Черновик", student, TaskStatus.PENDING, soon, AssignmentStatus.DRAFT);
         task("Ушёл с курса", leaver, TaskStatus.PENDING, soon, AssignmentStatus.ACTIVE);
         task("Через двое суток", student, TaskStatus.PENDING, NOW.plusHours(25), AssignmentStatus.ACTIVE);
         task("Уже прошло", student, TaskStatus.PENDING, NOW.minusMinutes(1), AssignmentStatus.ACTIVE);
