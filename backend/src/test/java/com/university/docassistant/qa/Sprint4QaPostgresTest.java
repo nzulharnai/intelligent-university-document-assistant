@@ -39,6 +39,10 @@ import com.university.docassistant.service.NotificationService;
 import com.university.docassistant.service.SubmissionService;
 import com.university.docassistant.service.TaskService;
 import com.university.docassistant.service.storage.StorageService;
+import com.university.docassistant.dto.CourseDtos.CourseResponse;
+import com.university.docassistant.security.JoinAttemptLimiter;
+import com.university.docassistant.service.CourseService;
+import com.university.docassistant.service.CoursePrivacyRemask;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,6 +50,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Pageable;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -97,7 +102,7 @@ import static org.mockito.Mockito.when;
 @Import({JpaSettings.class, Sprint4QaPostgresTest.Fixed.class, AccessControlService.class, AuditService.class,
         DocumentPrivacyService.class, AssignmentService.class, AssignmentEvents.class, NotificationService.class,
         NotificationEvents.class, SubmissionService.class, GradingService.class, TaskService.class,
-        DeadlineReminderService.class})
+        DeadlineReminderService.class, CourseService.class, JoinAttemptLimiter.class})
 class Sprint4QaPostgresTest {
 
     /** Saturday 24.10.2026 12:00 in the app time zone. */
@@ -139,6 +144,8 @@ class Sprint4QaPostgresTest {
     private EmailService email;
     @MockBean
     private StorageService storage;
+    @MockBean
+    private CoursePrivacyRemask privacyRemask;
 
     @Autowired
     private AssignmentService assignments;
@@ -148,6 +155,8 @@ class Sprint4QaPostgresTest {
     private GradingService grading;
     @Autowired
     private TaskService taskService;
+    @Autowired
+    private CourseService courseService;
     @Autowired
     private DeadlineReminderService reminders;
     @Autowired
@@ -376,6 +385,57 @@ class Sprint4QaPostgresTest {
     }
 
     @Nested
+    @DisplayName("Re-joining a course after leaving it")
+    class Rejoin {
+
+        @Test
+        @DisplayName("the course, the old task with its hand-in and grade come back, new tasks are added, nothing twice")
+        void leaveAndJoinAgain() {
+            AssignmentResponse lab1 = assignment("Лаб. 1", NOW.plusDays(2), true, 10);
+            AssignmentResponse lab0 = assignment("Лаб. 0", NOW.minusDays(1), true, null);   // Overdue before leaving.
+            Long task = taskOf(STUDENT, lab1);
+            submit(task, STUDENT);
+            grading.grade(task, new GradeRequest(new BigDecimal("8"), "Хорошо"), TEACHER);
+            String code = courseService.inviteCode(course.getId(), TEACHER);
+            assertThat(courseService.listMine(STUDENT, null, coursesPage()).content()).as("before leaving").hasSize(1);
+            assertThat(courseService.listMine(STUDENT, "INF", coursesPage()).content()).as("search").hasSize(1);
+
+            courseService.unenroll(course.getId(), student.getId(), STUDENT);
+            assertThat(courseService.listMine(STUDENT, null, coursesPage()).content()).isEmpty();
+            AssignmentResponse lab2 = assignment("Лаб. 2", NOW.plusDays(5), true, null);       // Added while away.
+            AssignmentResponse missed = assignment("Лаб. пропущенная", NOW.minusHours(2), true, null);
+
+            assertThat(courseService.join(code, STUDENT)).isEqualTo(course.getId());
+
+            assertThat(courseService.listMine(STUDENT, null, coursesPage()).content())
+                    .extracting(CourseResponse::id).containsExactly(course.getId());
+            assertThat(courseService.details(course.getId(), STUDENT).course().id()).isEqualTo(course.getId());
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM tasks t JOIN users u ON u.id = t.user_id "
+                    + "WHERE u.email = ? GROUP BY t.assignment_id ORDER BY COUNT(*) DESC LIMIT 1", Integer.class, STUDENT))
+                    .as("no assignment twice").isEqualTo(1);
+            TaskResponse back = taskService.listMine(STUDENT, TaskStateFilter.ALL, null, page()).content().stream()
+                    .filter(view -> view.id().equals(task)).findFirst().orElseThrow();
+            assertThat(back.status()).isEqualTo(TaskStatus.GRADED);
+            assertThat(back.score()).isEqualByComparingTo("8");
+            assertThat(back.submissionCount()).isEqualTo(1);
+            assertThat(submissions.listForTask(task, STUDENT)).hasSize(1);
+            assertThat(ids(TaskStateFilter.ALL)).containsExactlyInAnyOrder(task, taskOf(STUDENT, lab0),
+                    taskOf(STUDENT, lab2), taskOf(STUDENT, missed));
+            // Overdue: only Лаб. 0, which already was before leaving; the one missed while away is not.
+            assertThat(ids(TaskStateFilter.OVERDUE)).containsExactly(taskOf(STUDENT, lab0));
+            assertThat(taskService.summary(STUDENT)).isEqualTo(new TaskSummary(1, 1, 1));
+        }
+
+        @Test
+        @DisplayName("joining while still enrolled changes nothing")
+        void joinTwice() {
+            String code = courseService.inviteCode(course.getId(), TEACHER);
+            assertThat(courseService.join(code, STUDENT)).isEqualTo(course.getId());
+            assertThat(courseService.listMine(STUDENT, null, coursesPage()).content()).hasSize(1);
+        }
+    }
+
+    @Nested
     @DisplayName("QA-NOT-013: notifications and reminders")
     class QaNot013 {
 
@@ -449,6 +509,11 @@ class Sprint4QaPostgresTest {
     private void submit(Long task, String studentEmail, String fileName) {
         List<MultipartFile> files = List.of(new MockMultipartFile("files", fileName, "application/pdf", new byte[]{1, 2, 3}));
         submissions.submit(task, files, studentEmail);
+    }
+
+    /** What GET /api/v1/courses passes by default (CourseController: size 20, sorted by title). */
+    private static Pageable coursesPage() {
+        return PageRequest.of(0, 20, Sort.by("title"));
     }
 
     private List<Long> ids(TaskStateFilter state) {

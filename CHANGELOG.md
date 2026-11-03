@@ -29,6 +29,12 @@ browser checks: the "Review fixes" section of [docs/sprint4-manual-test-checklis
 
 ### Changed
 
+- **Students' course list (found re-joining a course).** `GET /api/v1/courses` answered 500 for every student:
+  the query selected the course through `Enrollment`, so the default sort by `title` became `order by e.title`, and
+  `Enrollment` has no title (Hibernate `UnknownPathException`). Joining by link opens the course page directly, so
+  this showed only when the "Курсы" page was opened, e.g. after leaving and joining again. The student queries
+  (`findByStudentId`, `searchByStudentId`) now select from `Course`. Re-joining gives back the old tasks with their
+  hand-ins and grades and adds only the missing ones (`Sprint4QaPostgresTest` "Re-joining a course after leaving it").
 - **Grading too early (US-11).** Grading a task with nothing handed in made it GRADED, and `SubmissionService` then
   refused the student's work with `SUBMISSION_ALREADY_GRADED` although the deadline had not passed. Now such a task
   is graded only when the assignment has no deadline, the deadline has passed by the shared clock, or the assignment

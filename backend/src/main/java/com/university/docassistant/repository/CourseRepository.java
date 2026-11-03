@@ -24,9 +24,15 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     @EntityGraph(attributePaths = "teacher")
     Page<Course> findByTeacherId(Long teacherId, Pageable pageable);
 
+    /**
+     * JPQL condition on Course c: the student is enrolled in it. The student queries select from Course, so the page's
+     * sort (title, code, id) applies to the course; selected from Enrollment it became "order by e.title" and failed.
+     */
+    String ENROLLED_STUDENT = "(c.id IN (SELECT e.id.courseId FROM Enrollment e WHERE e.id.studentId = :studentId))";
+
     @EntityGraph(attributePaths = "teacher")
-    @Query(value = "SELECT c FROM Enrollment e JOIN e.course c WHERE e.id.studentId = :studentId",
-            countQuery = "SELECT COUNT(e) FROM Enrollment e WHERE e.id.studentId = :studentId")
+    @Query(value = "SELECT c FROM Course c WHERE " + ENROLLED_STUDENT,
+            countQuery = "SELECT COUNT(c) FROM Course c WHERE " + ENROLLED_STUDENT)
     Page<Course> findByStudentId(@Param("studentId") Long studentId, Pageable pageable);
 
     @EntityGraph(attributePaths = "teacher")
@@ -61,13 +67,13 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
 
     @EntityGraph(attributePaths = "teacher")
     @Query(value = """
-            SELECT c FROM Enrollment e JOIN e.course c
-            WHERE e.id.studentId = :studentId
+            SELECT c FROM Course c
+            WHERE """ + ENROLLED_STUDENT + """
               AND (LOWER(c.title) LIKE :pattern ESCAPE '\\' OR LOWER(COALESCE(c.code, '')) LIKE :pattern ESCAPE '\\')
             """,
             countQuery = """
-            SELECT COUNT(e) FROM Enrollment e JOIN e.course c
-            WHERE e.id.studentId = :studentId
+            SELECT COUNT(c) FROM Course c
+            WHERE """ + ENROLLED_STUDENT + """
               AND (LOWER(c.title) LIKE :pattern ESCAPE '\\' OR LOWER(COALESCE(c.code, '')) LIKE :pattern ESCAPE '\\')
             """)
     Page<Course> searchByStudentId(@Param("studentId") Long studentId, @Param("pattern") String pattern,
