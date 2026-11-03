@@ -38,14 +38,10 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
              OR EXISTS (SELECT s.id FROM TaskSubmission s WHERE s.task = t))
             """;
 
-    /**
-     * JPQL condition on Task t, for the student's own lists: no course, or its owner is still enrolled in it; and never
-     * a task of a DRAFT assignment (fanOut does not create those; this keeps it so if one ever existed).
-     */
+    /** JPQL condition on Task t, for the student's own lists: no course, or its owner is still enrolled in it. */
     String ENROLLED = """
             (t.course IS NULL OR EXISTS (SELECT e.enrolledAt FROM Enrollment e
                                          WHERE e.course = t.course AND e.student = t.user))
-            AND (t.assignment IS NULL OR t.assignment.status <> com.university.docassistant.entity.AssignmentStatus.DRAFT)
             """;
 
     @Query(value = TaskResponse.SELECT + "WHERE t.user.id = :userId AND " + ENROLLED,

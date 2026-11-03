@@ -30,7 +30,6 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
   // MAX_SCORE_BELOW_GRADES from the server, shown under the field until the value changes.
   const [maxScoreError, setMaxScoreError] = useState('')
 
-  const published = assignment.status !== 'DRAFT'
   const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }))
 
   const save = async (event) => {
@@ -54,7 +53,7 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
         allowLate: form.allowLate,
         maxScore: form.maxScore === '' ? null : Number(form.maxScore),
       })
-      showSuccess(published ? 'Задание сохранено, студенты видят изменения' : 'Черновик сохранён')
+      showSuccess('Задание сохранено, студенты видят изменения')
       onSaved?.(data)
       onClose()
     } catch (err) {
@@ -70,7 +69,7 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
 
   return (
     <>
-    <Dialog title={published ? 'Изменить задание' : 'Изменить черновик'} icon={Pencil} onClose={onClose} busy={saving} size="lg">
+    <Dialog title="Изменить задание" icon={Pencil} onClose={onClose} busy={saving} size="lg">
         <form onSubmit={save} className="mt-5 space-y-4">
           <div>
             <label htmlFor={`${titleId}-title`} className={labelClass}>Название</label>
@@ -129,12 +128,10 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
               </span>
             </label>
           </div>
-          {published && (
-            <p className="flex items-start gap-2 rounded-control bg-primary-soft px-3 py-2 text-small text-primary-fg">
-              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              Студенты курса сразу увидят изменения; их статусы и сданные решения сохранятся.
-            </p>
-          )}
+          <p className="flex items-start gap-2 rounded-control bg-primary-soft px-3 py-2 text-small text-primary-fg">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            Студенты курса сразу увидят изменения; их статусы и сданные решения сохранятся.
+          </p>
           <DialogActions>
             <Button variant="outline" onClick={onClose} disabled={saving}>Отмена</Button>
             <Button type="submit" loading={saving} disabled={!form.title.trim()}>Сохранить</Button>

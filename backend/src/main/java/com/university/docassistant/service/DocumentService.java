@@ -504,28 +504,15 @@ public class DocumentService {
         Double confidence = document.getAiStatus() == AiStatus.DONE
                 ? classificationService.findResult(id).map(DocumentClassification::getConfidenceScore).orElse(null)
                 : null;
-        // A student sees the document, so this is the teacher of its course or ADMIN when not a student.
-        AssignmentCounts counts = assignmentCounts(List.of(id), user.getRole() != Role.ROLE_STUDENT)
-                .getOrDefault(id, AssignmentCounts.NONE);
         return new DocumentStatusResponse(document.getAiStatus(), document.getCategory(), confidence,
-                counts.total(), counts.drafts(), document.getOcrStatus(), document.isTextFromOcr());
+                assignmentCounts(List.of(id)).getOrDefault(id, 0L), document.getOcrStatus(), document.isTextFromOcr());
     }
 
-    /** Assignments found in a document: all of them, and of those the DRAFTs (both without drafts for a student). */
-    private record AssignmentCounts(long total, long drafts) {
-        static final AssignmentCounts NONE = new AssignmentCounts(0, 0);
-    }
-
-    private Map<Long, AssignmentCounts> assignmentCounts(List<Long> documentIds, boolean withDrafts) {
-        Map<Long, AssignmentCounts> counts = new HashMap<>();
-        for (Object[] row : assignmentRepository.countByStatusForSourceDocumentIds(documentIds)) {
-            boolean draft = row[1] == AssignmentStatus.DRAFT;
-            if (draft && !withDrafts) {
-                continue;
-            }
-            long count = (Long) row[2];
-            counts.merge((Long) row[0], new AssignmentCounts(count, draft ? count : 0),
-                    (a, b) -> new AssignmentCounts(a.total() + b.total(), a.drafts() + b.drafts()));
+    /** How many assignments were found in each of the documents (documents without any are missing). */
+    private Map<Long, Long> assignmentCounts(List<Long> documentIds) {
+        Map<Long, Long> counts = new HashMap<>();
+        for (Object[] row : assignmentRepository.countBySourceDocumentIds(documentIds)) {
+            counts.put((Long) row[0], (Long) row[1]);
         }
         return counts;
     }
@@ -559,16 +546,11 @@ public class DocumentService {
         if (visible.isEmpty()) {
             return List.of();
         }
-        // includeTeacherOnly: the teacher of these courses or ADMIN, who also review the drafts.
-        Map<Long, AssignmentCounts> counts = assignmentCounts(
-                visible.stream().map(DocumentRepository.StatusRow::id).toList(), scope.includeTeacherOnly());
+        Map<Long, Long> counts = assignmentCounts(visible.stream().map(DocumentRepository.StatusRow::id).toList());
         return visible.stream()
-                .map(row -> {
-                    AssignmentCounts found = counts.getOrDefault(row.id(), AssignmentCounts.NONE);
-                    return new DocumentStatusItem(row.id(), row.aiStatus(), row.category(),
-                            row.aiStatus() == AiStatus.DONE ? row.confidence() : null, found.total(), found.drafts(),
-                            row.ocrStatus(), row.textFromOcr());
-                })
+                .map(row -> new DocumentStatusItem(row.id(), row.aiStatus(), row.category(),
+                        row.aiStatus() == AiStatus.DONE ? row.confidence() : null, counts.getOrDefault(row.id(), 0L),
+                        row.ocrStatus(), row.textFromOcr()))
                 .toList();
     }
 

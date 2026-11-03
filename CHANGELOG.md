@@ -2,8 +2,30 @@
 
 ## Sprint 4 — review fixes
 
-Fixes from the review of Sprint 4, on top of the section below; no new features. Manual browser checks: the
-"Review fixes" section of [docs/sprint4-manual-test-checklist.md](docs/sprint4-manual-test-checklist.md).
+Fixes from the review of Sprint 4, on top of the section below, and one change the course teacher asked for. Manual
+browser checks: the "Review fixes" section of [docs/sprint4-manual-test-checklist.md](docs/sprint4-manual-test-checklist.md).
+
+### Changed at the teacher's request: drafts removed, AI assignments are published immediately
+
+- **No draft step (replaces US-08 drafts).** Assignments the AI finds in a syllabus or assignment file are created
+  `ACTIVE` at once: every enrolled student gets the task and is told (`ASSIGNMENT_PUBLISHED`, one notification per
+  analysis, listing the titles). The publication is audited as `ASSIGNMENT_PUBLISHED` ("Публикация заданий") without
+  a user, naming the document.
+- **Duplicates are skipped.** An AI assignment with the same normalized title (`AssignmentTitles.normalize`: "Лаб.
+  работа №1" = "Лабораторная работа 1") and a deadline on the same day as an assignment the course already has (from
+  another document, by hand, or found twice in one analysis) is not created; the log names both. Two assignments
+  without a deadline count as the same day. Different numbers ("Лаб. 1" / "Лаб. 2") are never duplicates, and other
+  courses are never compared. A re-analysis that only words a title differently keeps the existing assignment.
+- **Removed:** the status `DRAFT`; `GET /api/v1/courses/{id}/assignments/drafts`, `POST /api/v1/assignments/{id}/publish`,
+  `POST /api/v1/courses/{id}/assignments/publish` and `POST /api/v1/assignments/{id}/not-duplicate`; the "looks like"
+  mark (`duplicate_of_id`); the error codes `ASSIGNMENT_NOT_DRAFT` and `ASSIGNMENT_IS_DRAFT`; `draftsCount` in the
+  document status; the setting `app.ai.auto-publish-assignments` (`AI_AUTO_PUBLISH_ASSIGNMENTS`); the course page's
+  "Черновики от ИИ" section.
+- **Kept:** editing (`PATCH /api/v1/assignments/{id}`) with the task sync, close / reopen, delete only without student
+  work, `DEADLINE_CHANGED` notifications, Rule B (exam answers never become assignments) and the review fixes below.
+- **Frontend.** After an upload: "ИИ добавил N заданий из «файл»" with a link to the course's assignments. In
+  "Задания курса" an AI assignment has the tag "Найдено ИИ" and its source document; the teacher edits, closes or
+  deletes it there. The warning "ИИ обработал документ не полностью — проверьте задания вручную" moved there too.
 
 ### Changed
 
@@ -43,8 +65,11 @@ Fixes from the review of Sprint 4, on top of the section below; no new features.
 | Change | How existing rows are handled |
 |---|---|
 | `tasks.deadline_before_enrollment` | NOT NULL with `DEFAULT false`; then `DeadlineBeforeEnrollmentMigration` sets it once |
+| `assignments.status` | `AssignmentStatusMigration`: old `DRAFT` rows become `ACTIVE`, their courses' students get the tasks (no notifications); the check constraint is rebuilt with `ACTIVE`, `CLOSED` only |
+| `assignments.duplicate_of_id` | dropped (the draft "looks like" mark) |
 
-`DeadlineBeforeEnrollmentMigration` sets the flag for assignment tasks whose deadline is before the student's
+`AssignmentStatusMigration` runs first among the startup jobs, so nothing loads a row with the old status; a second
+start finds no draft and rebuilds the same constraint. `DeadlineBeforeEnrollmentMigration` sets the flag for assignment tasks whose deadline is before the student's
 `course_students.enrolled_at`; without an enrollment row or `enrolled_at` it stays false. It runs once per database:
 it then writes a marker comment on the column, so a restart never sets the flag again where a deadline change cleared
 it. The backfill and the marker are in one transaction.
@@ -181,7 +206,7 @@ on PostgreSQL with real commits, a fixed clock and mocked mail.
   - The e-mail is in the site's blue, with "Открыть в UniDocs" (`app.frontend-url` + link) and "Отключить письма
     можно в профиле".
 - **Hooks.**
-  - Publishing (one or several drafts, a teacher's new assignment, AI auto-publish) → `ASSIGNMENT_PUBLISHED` to
+  - Publishing (a teacher's new assignment, or the AI assignments of one analysis) → `ASSIGNMENT_PUBLISHED` to
     enrolled students, one per student per action, listing the titles.
   - A moved deadline → `DEADLINE_CHANGED` with the old and the new date.
   - A grade → `TASK_GRADED` with "Оценка: 8.5 из 10". It is now sent inside the grading transaction; the e-mail
@@ -250,6 +275,9 @@ skipped. New for Sprint 4:
 
 
 ## Sprint 3 — review fixes
+
+> The AI draft step described in this section was removed in "Sprint 4 — review fixes" at the course teacher's
+> request: AI assignments are now published at once.
 
 Fixes from the review of Sprint 3, on top of the section below. Manual browser checks: the "Review fix" sections of
 [docs/sprint3-manual-test-checklist.md](docs/sprint3-manual-test-checklist.md).
@@ -376,6 +404,9 @@ deadline-extraction call, no longer a cut-off. Update your local `application.ym
   hidden from them, e.g. typed `EXAM_ANSWERS` later; the document itself stays closed to them (403).
 
 ## Sprint 3 — Review of AI results, personal data protection, OCR
+
+> The AI draft step described in this section was removed in "Sprint 4 — review fixes" at the course teacher's
+> request: AI assignments are now published at once.
 
 US-08 (the teacher reviews what the AI found before students see it), US-09 (personal data is masked for students,
 search, Q&A and the AI), US-07 (scanned PDFs and images get their text by OCR), plus the UI audit fixes. Manual

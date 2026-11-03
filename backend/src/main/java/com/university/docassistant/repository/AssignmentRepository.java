@@ -23,21 +23,13 @@ import java.util.Optional;
 @Repository
 public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
 
-    /** JPQL condition on Assignment a: published (ACTIVE or CLOSED). DRAFTs are listed only by {@link #findDraftViewsByCourseId}. */
-    String PUBLISHED = "a.status <> " + "com.university.docassistant.entity.AssignmentStatus.DRAFT";
-
-    @Query(value = AssignmentResponse.SELECT + "WHERE c.id = :courseId AND " + PUBLISHED,
-            countQuery = "SELECT COUNT(a) FROM Assignment a WHERE a.course.id = :courseId AND " + PUBLISHED)
+    @Query(value = AssignmentResponse.SELECT + "WHERE c.id = :courseId",
+            countQuery = "SELECT COUNT(a) FROM Assignment a WHERE a.course.id = :courseId")
     Page<AssignmentResponse> findViewsByCourseId(@Param("courseId") Long courseId, Pageable pageable);
 
-    @Query(value = AssignmentResponse.SELECT + "WHERE d.id = :documentId AND " + PUBLISHED,
-            countQuery = "SELECT COUNT(a) FROM Assignment a WHERE a.sourceDocument.id = :documentId AND " + PUBLISHED)
+    @Query(value = AssignmentResponse.SELECT + "WHERE d.id = :documentId",
+            countQuery = "SELECT COUNT(a) FROM Assignment a WHERE a.sourceDocument.id = :documentId")
     Page<AssignmentResponse> findViewsBySourceDocumentId(@Param("documentId") Long documentId, Pageable pageable);
-
-    /** The AI drafts of a course waiting for review; for its teacher and ADMIN only. */
-    @Query(value = AssignmentResponse.SELECT + "WHERE c.id = :courseId AND a.status = com.university.docassistant.entity.AssignmentStatus.DRAFT",
-            countQuery = "SELECT COUNT(a) FROM Assignment a WHERE a.course.id = :courseId AND a.status = com.university.docassistant.entity.AssignmentStatus.DRAFT")
-    Page<AssignmentResponse> findDraftViewsByCourseId(@Param("courseId") Long courseId, Pageable pageable);
 
     @Query(AssignmentResponse.SELECT + "WHERE a.id = :id")
     Optional<AssignmentResponse> findViewById(@Param("id") Long id);
@@ -48,7 +40,7 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
     @Query("SELECT a FROM Assignment a WHERE a.sourceDocument.id IN :documentIds")
     List<Assignment> findBySourceDocumentIdIn(@Param("documentIds") Collection<Long> documentIds);
 
-    /** What duplicate detection compares: every assignment of a course, whatever its status. */
+    /** What duplicate detection compares: every assignment of a course, open or closed. */
     record MatchInfo(Long id, String title, LocalDateTime deadline, AssignmentStatus status) {
     }
 
@@ -57,9 +49,6 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
             FROM Assignment a WHERE a.course.id = :courseId
             """)
     List<MatchInfo> findMatchInfoByCourseId(@Param("courseId") Long courseId);
-
-    @Query("SELECT a.status FROM Assignment a WHERE a.id = :id")
-    Optional<AssignmentStatus> findStatusById(@Param("id") Long id);
 
     /** [documentId, count] of assignments found in each of the documents, in one query. */
     @Query("""
@@ -71,14 +60,6 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
 
     @Query("SELECT COUNT(a) FROM Assignment a WHERE a.sourceDocument.id = :documentId")
     long countBySourceDocumentId(@Param("documentId") Long documentId);
-
-    /** [documentId, status, count] of the assignments found in each of the documents, in one query. */
-    @Query("""
-            SELECT a.sourceDocument.id, a.status, COUNT(a) FROM Assignment a
-            WHERE a.sourceDocument.id IN :documentIds
-            GROUP BY a.sourceDocument.id, a.status
-            """)
-    List<Object[]> countByStatusForSourceDocumentIds(@Param("documentIds") Collection<Long> documentIds);
 
     @Query("SELECT a.course.id FROM Assignment a WHERE a.id = :id")
     Optional<Long> findCourseIdById(@Param("id") Long id);

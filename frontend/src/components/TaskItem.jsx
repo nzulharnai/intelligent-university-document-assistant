@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Award, BookOpen, ChevronDown, FileText, Loader2, Lock, MessageSquareText, Trash2 } from 'lucide-react'
+import { Award, BookOpen, ChevronDown, FileText, Loader2, Lock, MessageSquareText, Sparkles, Trash2 } from 'lucide-react'
 import { ASSIGNMENT_TASK_STATUSES, LEGACY_TASK_STATUSES, TASK_STATUS_LABELS } from '../constants/documents'
 import { deadlineExcuse, getDeadlineInfo, getTaskType, isOverdue } from '../utils/tasks'
 import TaskStateBadge, { taskState } from './TaskStateBadge'
@@ -12,7 +12,8 @@ import { badgeClass } from './ui/styles'
  * (own tasks: "Не начато" / "В работе" on an assignment task, also "Выполнено" on a legacy one) until the system sets
  * "Сдано" or "Оценено"; otherwise, and then, a read-only badge when the status is a task status; {@code showDocument} links the source
  * document; {@code onDelete} adds a delete button (assignments, for the course teacher); {@code actions} adds more
- * buttons next to it; {@code extra} is rendered under the tags (submissions). A closed assignment - or a student's
+ * buttons next to it; {@code extra} is rendered under the tags (submissions). An assignment the AI found in a
+ * document has the tag "Найдено ИИ". A closed assignment - or a student's
  * task of one - is marked "Закрыто" (with nothing handed in: the chip "Задание закрыто", never overdue; likewise
  * "Срок прошёл до записи" for a deadline that passed before the student enrolled). A student's overdue task (nothing
  * handed in, deadline passed, assignment open) is highlighted
@@ -32,6 +33,8 @@ export default function TaskItem({ task, onStatusChange, onDelete, actions = nul
   const completed = task.status === 'COMPLETED'
   // The excuse chip already says "Задание закрыто"; no second "Закрыто" tag then.
   const closed = (task.status === 'CLOSED' || task.assignmentStatus === 'CLOSED') && excuse !== 'CLOSED'
+  // A course assignment (not a student's task) the AI found in a document.
+  const aiFound = Boolean(task.sourceDocumentId)
   const documentId = task.documentId ?? task.sourceDocumentId
   const documentName = task.documentName ?? task.sourceDocumentName
   const location = useLocation()
@@ -57,6 +60,11 @@ export default function TaskItem({ task, onStatusChange, onDelete, actions = nul
         )}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <Badge tone={type.tone} icon={type.icon}>{type.label}</Badge>
+          {aiFound && (
+            <Badge tone="accent" icon={Sparkles} title="Задание найдено ИИ в документе курса; преподаватель может изменить или закрыть его">
+              Найдено ИИ
+            </Badge>
+          )}
           {closed && (
             <Badge tone="neutral" icon={Lock} title="Задание закрыто: новые решения не принимаются">Закрыто</Badge>
           )}

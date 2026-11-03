@@ -3,7 +3,6 @@ package com.university.docassistant.service;
 import com.university.docassistant.config.PrivacyProperties;
 import com.university.docassistant.dto.AssignmentDtos.AssignmentResponse;
 import com.university.docassistant.dto.AssignmentDtos.CreateAssignmentRequest;
-import com.university.docassistant.dto.AssignmentDtos.PublishResponse;
 import com.university.docassistant.dto.AssignmentDtos.UpdateAssignmentRequest;
 import com.university.docassistant.dto.PageResponse;
 import com.university.docassistant.dto.TaskExtractDto;
@@ -35,6 +34,8 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Optional;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,9 +47,9 @@ import java.util.Set;
  * teacher can add more. Every student enrolled in the course gets a task per ACTIVE assignment, also when enrolling
  * later (CourseService calls {@link #handOut}).
  * <p>
- * What the AI finds is a DRAFT until the course teacher (or ADMIN) publishes it: students neither see drafts nor get
- * tasks for them. app.ai.auto-publish-assignments=true restores the old behavior (AI assignments ACTIVE at once).
- * Assignments created by hand are ACTIVE immediately.
+ * What the AI finds is ACTIVE at once, handed out and announced to the students like an assignment created by hand
+ * (changed at the course teacher's request: no review step). An AI item the course already has (same normalized title,
+ * deadline on the same day) is skipped. The teacher fixes AI mistakes afterwards: edit, close or delete.
  * <p>
  * Student work is never deleted: an assignment with any task that has a submission or a status other than PENDING
  * ("activity") is CLOSED instead (kept with its tasks and submissions, no longer handed out or accepting files). Only
@@ -66,24 +67,20 @@ public class AssignmentService {
     private final AuditService auditService;
     private final AssignmentEvents events;
     private final DocumentPrivacyService privacyService;
-    /** False (default): AI assignments start as DRAFT; true: ACTIVE at once, as before drafts existed. */
-    private final boolean autoPublish;
 
     /** For tests: masking with the default settings. */
     public AssignmentService(AssignmentRepository assignmentRepository, TaskRepository taskRepository,
                              CourseRepository courseRepository, DocumentRepository documentRepository,
-                             AccessControlService access, AuditService auditService, AssignmentEvents events,
-                             boolean autoPublish) {
+                             AccessControlService access, AuditService auditService, AssignmentEvents events) {
         this(assignmentRepository, taskRepository, courseRepository, documentRepository, access, auditService, events,
-                new DocumentPrivacyService(new PrivacyProperties(null, null)), autoPublish);
+                new DocumentPrivacyService(new PrivacyProperties(null, null)));
     }
 
     @Autowired
     public AssignmentService(AssignmentRepository assignmentRepository, TaskRepository taskRepository,
                              CourseRepository courseRepository, DocumentRepository documentRepository,
                              AccessControlService access, AuditService auditService, AssignmentEvents events,
-                             DocumentPrivacyService privacyService,
-                             @Value("${app.ai.auto-publish-assignments:false}") boolean autoPublish) {
+                             DocumentPrivacyService privacyService) {
         this.privacyService = privacyService;
         this.assignmentRepository = assignmentRepository;
         this.taskRepository = taskRepository;
@@ -92,11 +89,7 @@ public class AssignmentService {
         this.access = access;
         this.auditService = auditService;
         this.events = events;
-        this.autoPublish = autoPublish;
     }
-
-    static final String NOT_DRAFTS_OF_COURSE = "Опубликовать можно только черновики этого курса; список устарел — "
-            + "обновите страницу";
 
     static final String HAS_ACTIVITY = "Студенты уже работают над этим заданием (есть решения или изменённые статусы), "
             + "поэтому удалить его нельзя. Закройте задание: оно останется в курсе вместе с решениями студентов, "
@@ -113,47 +106,6 @@ public class AssignmentService {
         // US-09: students see the source documents' names with personal data masked.
         return PageResponse.of(page.map(row ->
                 row.withSourceDocumentName(privacyService.maskFileName(row.sourceDocumentName()))));
-    }
-
-    /** The course's AI drafts waiting for review; for its teacher or ADMIN. */
-    @Transactional(readOnly = true)
-    public PageResponse<AssignmentResponse> drafts(Long courseId, String email, Pageable pageable) {
-        access.authorizeCourse(access.currentUser(email), courseId, Permission.MANAGE_ASSIGNMENTS);
-        return PageResponse.of(assignmentRepository.findDraftViewsByCourseId(courseId, pageable));
-    }
-
-    /** DRAFT -> ACTIVE, then every enrolled student gets the task; for the course teacher or ADMIN. */
-    @Transactional
-    public AssignmentResponse publish(Long id, String email) {
-        User user = access.currentUser(email);
-        Assignment assignment = assignmentRepository.findById(id)
-                .orElseThrow(() -> ApiException.notFound(ErrorCodes.ASSIGNMENT_NOT_FOUND, "Assignment not found"));
-        Long courseId = assignment.getCourse().getId();
-        access.authorizeCourse(user, courseId, Permission.MANAGE_ASSIGNMENTS);
-        requirePublishable(assignment);
-        publishAndHandOut(user, courseId, List.of(assignment));
-        return assignmentRepository.findViewById(id)
-                .orElseThrow(() -> ApiException.notFound(ErrorCodes.ASSIGNMENT_NOT_FOUND, "Assignment not found"));
-    }
-
-    /**
-     * Publishes several drafts of the course at once, all or nothing: every id must be a DRAFT of this course with a
-     * title, otherwise 400 and nothing changes. For the course teacher or ADMIN.
-     */
-    @Transactional
-    public PublishResponse publishAll(Long courseId, List<Long> ids, String email) {
-        User user = access.currentUser(email);
-        access.authorizeCourse(user, courseId, Permission.MANAGE_ASSIGNMENTS);
-        List<Long> distinct = ids.stream().distinct().toList();
-        List<Assignment> drafts = assignmentRepository.findAllById(distinct);
-        // An unknown id and one of another course get the same answer, so ids of other courses reveal nothing.
-        if (drafts.size() != distinct.size()
-                || drafts.stream().anyMatch(assignment -> !courseId.equals(assignment.getCourse().getId()))) {
-            throw ApiException.badRequest(ErrorCodes.ASSIGNMENT_NOT_DRAFT, NOT_DRAFTS_OF_COURSE);
-        }
-        drafts.forEach(AssignmentService::requirePublishable);
-        int tasksCreated = publishAndHandOut(user, courseId, drafts);
-        return new PublishResponse(drafts.size(), tasksCreated);
     }
 
     @Transactional
@@ -187,9 +139,7 @@ public class AssignmentService {
         Long courseId = assignmentRepository.findCourseIdById(id)
                 .orElseThrow(() -> ApiException.notFound(ErrorCodes.ASSIGNMENT_NOT_FOUND, "Assignment not found"));
         access.authorizeCourse(user, courseId, Permission.MANAGE_ASSIGNMENTS);
-        // A DRAFT was never handed out, so it has no student work: it can always go.
-        boolean draft = assignmentRepository.findStatusById(id).orElse(null) == AssignmentStatus.DRAFT;
-        if (!draft && !taskRepository.findAssignmentIdsWithActivity(List.of(id)).isEmpty()) {
+        if (!taskRepository.findAssignmentIdsWithActivity(List.of(id)).isEmpty()) {
             throw ApiException.conflict(ErrorCodes.ASSIGNMENT_HAS_ACTIVITY, HAS_ACTIVITY);
         }
         taskRepository.deleteByAssignmentIdIn(List.of(id));
@@ -201,8 +151,8 @@ public class AssignmentService {
 
     /**
      * The course teacher (or ADMIN) fixes an assignment - typically an AI mistake: title, requirements, deadline. Works
-     * for DRAFT, ACTIVE and CLOSED; the students' tasks of a published one get the new values, their statuses and
-     * submissions stay as they are. A deadline change of an ACTIVE assignment is audited and reported to
+     * for ACTIVE and CLOSED; the students' tasks get the new values, their statuses and submissions stay as they
+     * are. A deadline change of an ACTIVE assignment is audited and reported to
      * {@link AssignmentEvents#deadlineChanged}.
      */
     @Transactional
@@ -227,9 +177,7 @@ public class AssignmentService {
         }
         assignment.setMaxScore(request.maxScore());
         assignmentRepository.saveAndFlush(assignment);
-        if (assignment.getStatus() != AssignmentStatus.DRAFT) {
-            taskRepository.syncWithAssignments(courseId);
-        }
+        taskRepository.syncWithAssignments(courseId);
         if (assignment.getStatus() == AssignmentStatus.ACTIVE && !Objects.equals(previousDeadline, request.deadline())) {
             auditService.record(user.getEmail(), AuditService.ASSIGNMENT_DEADLINE_CHANGED, "Assignment " + id + " \""
                     + assignment.getTitle() + "\" of course " + courseId + ": " + deadlineText(previousDeadline)
@@ -243,7 +191,7 @@ public class AssignmentService {
 
     /**
      * CLOSED -> ACTIVE: submissions are accepted again and students enrolled meanwhile get their task. Idempotent for
-     * an ACTIVE assignment; a DRAFT is published instead. For the course teacher or ADMIN.
+     * an ACTIVE assignment. For the course teacher or ADMIN.
      */
     @Transactional
     public AssignmentResponse reopen(Long id, String email) {
@@ -252,10 +200,6 @@ public class AssignmentService {
                 .orElseThrow(() -> ApiException.notFound(ErrorCodes.ASSIGNMENT_NOT_FOUND, "Assignment not found"));
         Long courseId = assignment.getCourse().getId();
         access.authorizeCourse(user, courseId, Permission.MANAGE_ASSIGNMENTS);
-        if (assignment.getStatus() == AssignmentStatus.DRAFT) {
-            throw ApiException.badRequest(ErrorCodes.ASSIGNMENT_IS_DRAFT,
-                    "Черновик нельзя открыть снова: опубликуйте его");
-        }
         if (assignment.getStatus() == AssignmentStatus.CLOSED) {
             takeOver(assignment);
             assignment.setStatus(AssignmentStatus.ACTIVE);
@@ -265,21 +209,6 @@ public class AssignmentService {
                     + assignment.getTitle() + "\" of course " + courseId + ", " + handedOut + " new student task(s)");
             log.info("User {} reopened assignment {} of course {} ({} new task(s))", user.getEmail(), id, courseId,
                     handedOut);
-        }
-        return assignmentRepository.findViewById(id)
-                .orElseThrow(() -> ApiException.notFound(ErrorCodes.ASSIGNMENT_NOT_FOUND, "Assignment not found"));
-    }
-
-    /** "Это другое задание": the teacher says the draft is not a duplicate after all. For the teacher or ADMIN. */
-    @Transactional
-    public AssignmentResponse notDuplicate(Long id, String email) {
-        User user = access.currentUser(email);
-        Assignment assignment = assignmentRepository.findById(id)
-                .orElseThrow(() -> ApiException.notFound(ErrorCodes.ASSIGNMENT_NOT_FOUND, "Assignment not found"));
-        access.authorizeCourse(user, assignment.getCourse().getId(), Permission.MANAGE_ASSIGNMENTS);
-        if (assignment.getDuplicateOf() != null) {
-            assignment.setDuplicateOf(null);
-            assignmentRepository.saveAndFlush(assignment);
         }
         return assignmentRepository.findViewById(id)
                 .orElseThrow(() -> ApiException.notFound(ErrorCodes.ASSIGNMENT_NOT_FOUND, "Assignment not found"));
@@ -296,11 +225,6 @@ public class AssignmentService {
                 .orElseThrow(() -> ApiException.notFound(ErrorCodes.ASSIGNMENT_NOT_FOUND, "Assignment not found"));
         Long courseId = assignment.getCourse().getId();
         access.authorizeCourse(user, courseId, Permission.MANAGE_ASSIGNMENTS);
-        if (assignment.getStatus() == AssignmentStatus.DRAFT) {
-            // A closed assignment is shown to students; a draft must be reviewed first.
-            throw ApiException.badRequest(ErrorCodes.ASSIGNMENT_IS_DRAFT,
-                    "Черновик нельзя закрыть: опубликуйте его или удалите");
-        }
         if (assignment.getStatus() != AssignmentStatus.CLOSED) {
             takeOver(assignment);
             assignment.setStatus(AssignmentStatus.CLOSED);
@@ -333,15 +257,8 @@ public class AssignmentService {
     }
 
     /**
-     * Makes the document's assignments match what the AI found: items already there (same title and deadline) are
-     * kept as they are (a draft stays a draft, a published one keeps its students' progress), new ones are created as
-     * DRAFT (ACTIVE with auto-publish). Vanished drafts are simply removed - no student ever saw them. Vanished
-     * published ones are removed, unless their students have already worked on them: those are closed (a re-analysis
-     * may just word a title differently). Then every enrolled student gets the tasks of the ACTIVE ones. Runs in the
-     * caller's transaction; returns the number of assignments found.
-     * <p>
-     * Assignments the teacher took over (edited, closed or reopened) are matched by the key they had before and are
-     * never changed or removed here: the teacher's word wins over the AI's.
+     * Makes the document's assignments match what the AI found; see {@link #replaceFromDocument(Long, Long, List,
+     * boolean)}. Runs in the caller's transaction; returns the number of assignments found.
      */
     @Transactional
     public int replaceFromDocument(Long documentId, Long courseId, List<TaskExtractDto> found) {
@@ -349,64 +266,111 @@ public class AssignmentService {
     }
 
     /**
-     * Like {@link #replaceFromDocument(Long, Long, List)}. {@code complete} false: {@code found} comes from only part
-     * of the document (an AI chunk failed), so the assignments it lacks are kept instead of removed or closed.
+     * Makes the document's assignments match what the AI found:
+     * <ul>
+     *   <li>items already there (same title and deadline) are kept as they are, with their students' progress; an
+     *       item that is the same assignment as one of this document's own, only worded differently
+     *       ({@link AssignmentTitles#sameAssignment}), keeps that one too;</li>
+     *   <li>an item the course already has from elsewhere (another document, by hand, or found twice in this one) is
+     *       skipped and logged;</li>
+     *   <li>the other items become new ACTIVE assignments: every enrolled student gets the task and is told
+     *       (ASSIGNMENT_PUBLISHED, one notification for the batch), and the publication is audited;</li>
+     *   <li>vanished ones are removed, unless their students have already worked on them: those are closed (a
+     *       re-analysis may just word a title differently). {@code complete} false: {@code found} comes from only
+     *       part of the document (an AI chunk failed), so nothing is removed or closed.</li>
+     * </ul>
+     * Assignments the teacher took over (edited, closed or reopened) are matched by the key they had before and are
+     * never changed or removed here: the teacher's word wins over the AI's. Runs in the caller's transaction; returns
+     * the number of the document's assignments from this analysis.
      */
     @Transactional
     public int replaceFromDocument(Long documentId, Long courseId, List<TaskExtractDto> found, boolean complete) {
-        Map<String, Assignment> existing = new HashMap<>();
-        List<Long> staleDrafts = new ArrayList<>();
-        for (Assignment assignment : assignmentRepository.findBySourceDocumentId(documentId)) {
-            if (existing.putIfAbsent(matchKey(assignment), assignment) != null
-                    && assignment.getStatus() == AssignmentStatus.DRAFT && assignment.getAiMatchKey() == null) {
-                staleDrafts.add(assignment.getId()); // A second draft with the same title and deadline.
-            }
-        }
+        List<Assignment> own = assignmentRepository.findBySourceDocumentId(documentId);
+        Set<Long> ownIds = new HashSet<>(own.stream().map(Assignment::getId).toList());
+        Map<String, Assignment> existing = new LinkedHashMap<>();
+        own.forEach(assignment -> existing.putIfAbsent(matchKey(assignment), assignment));
+        // What a new item must not duplicate: the course's assignments from elsewhere.
+        List<AssignmentRepository.MatchInfo> elsewhere = assignmentRepository.findMatchInfoByCourseId(courseId).stream()
+                .filter(candidate -> !ownIds.contains(candidate.id()))
+                .toList();
         List<Assignment> kept = new ArrayList<>();
+        List<Assignment> created = new ArrayList<>();
         for (TaskExtractDto item : found) {
             Assignment assignment = existing.remove(key(item.title(), item));
             if (assignment == null) {
+                assignment = takeSameAssignment(existing, item);
+            }
+            if (assignment == null) {
+                Optional<String> original = alreadyInCourse(item, elsewhere, kept);
+                if (original.isPresent()) {
+                    log.info("Course {}: AI assignment \"{}\" ({}) from document {} skipped, the course already has "
+                            + "\"{}\"", courseId, item.title(), deadlineText(item.deadline()), documentId,
+                            original.get());
+                    continue;
+                }
                 assignment = Assignment.builder()
                         .title(item.title())
                         .deadline(item.deadline())
-                        .status(autoPublish ? AssignmentStatus.ACTIVE : AssignmentStatus.DRAFT)
+                        .status(AssignmentStatus.ACTIVE)
                         .course(courseRepository.getReferenceById(courseId))
                         .sourceDocument(documentRepository.getReferenceById(documentId))
                         .build();
+                created.add(assignment);
             }
             if (assignment.getAiMatchKey() == null) {
                 assignment.setRequirements(item.description());
             }
             kept.add(assignment);
         }
-        List<Assignment> vanished = new ArrayList<>();
-        for (Assignment assignment : existing.values()) {
-            if (assignment.getAiMatchKey() != null || !complete) {
-                continue; // Taken over by the teacher, or maybe in a part the AI did not answer for: stays.
-            }
-            if (assignment.getStatus() == AssignmentStatus.DRAFT) {
-                staleDrafts.add(assignment.getId());
-            } else {
-                vanished.add(assignment);
-            }
-        }
-        if (!staleDrafts.isEmpty()) {
-            taskRepository.deleteByAssignmentIdIn(staleDrafts); // None expected: drafts are never handed out.
-            assignmentRepository.deleteAllByIdInBatch(staleDrafts);
-        }
+        List<Assignment> vanished = existing.values().stream()
+                // Taken over by the teacher, or maybe in a part the AI did not answer for: stays.
+                .filter(assignment -> assignment.getAiMatchKey() == null && complete)
+                .toList();
         // No signed-in user: the analysis runs in the background.
         retire(vanished, null, "no longer found by the AI in document " + documentId);
-        List<Assignment> created = kept.stream().filter(assignment -> assignment.getId() == null).toList();
         assignmentRepository.saveAll(kept);
         assignmentRepository.flush();
-        markDuplicates(courseId, created);
-        handOut(courseId);
-        if (autoPublish && !created.isEmpty()) {
-            // Published at once, without a teacher's review: the students hear about them like any publication.
-            events.published(courseId, courseRepository.findById(courseId).map(Course::getTitle).orElse(""),
-                    created.stream().map(Assignment::getTitle).toList());
+        int handedOut = handOut(courseId);
+        if (!created.isEmpty()) {
+            List<String> titles = created.stream().map(Assignment::getTitle).toList();
+            events.published(courseId, courseRepository.findById(courseId).map(Course::getTitle).orElse(""), titles);
+            auditService.record(null, AuditService.ASSIGNMENT_PUBLISHED, created.size()
+                    + " AI assignment(s) from document " + documentId + " in course " + courseId + ": "
+                    + created.stream().map(Assignment::getId).toList() + ", " + handedOut + " student task(s)");
+            log.info("Course {}: {} AI assignment(s) from document {} published ({} student task(s))", courseId,
+                    created.size(), documentId, handedOut);
         }
         return kept.size();
+    }
+
+    /** One of this document's own assignments that {@code item} names in other words; removed from {@code existing}. */
+    private static Assignment takeSameAssignment(Map<String, Assignment> existing, TaskExtractDto item) {
+        for (Map.Entry<String, Assignment> entry : existing.entrySet()) {
+            Assignment assignment = entry.getValue();
+            if (AssignmentTitles.sameAssignment(item.title(), item.deadline(), assignment.getTitle(),
+                    assignment.getDeadline())) {
+                existing.remove(entry.getKey());
+                return assignment;
+            }
+        }
+        return null;
+    }
+
+    /** The title of the course's assignment {@code item} duplicates: from elsewhere, or kept earlier in this batch. */
+    private static Optional<String> alreadyInCourse(TaskExtractDto item, List<AssignmentRepository.MatchInfo> elsewhere,
+                                                    List<Assignment> kept) {
+        for (AssignmentRepository.MatchInfo candidate : elsewhere) {
+            if (AssignmentTitles.sameAssignment(item.title(), item.deadline(), candidate.title(), candidate.deadline())) {
+                return Optional.of(candidate.title());
+            }
+        }
+        for (Assignment assignment : kept) {
+            if (AssignmentTitles.sameAssignment(item.title(), item.deadline(), assignment.getTitle(),
+                    assignment.getDeadline())) {
+                return Optional.of(assignment.getTitle());
+            }
+        }
+        return Optional.empty();
     }
 
     /** Creates the missing student tasks of the course and refreshes the others; returns how many were created. */
@@ -449,31 +413,6 @@ public class AssignmentService {
         return kept;
     }
 
-    private static void requirePublishable(Assignment assignment) {
-        if (assignment.getStatus() != AssignmentStatus.DRAFT) {
-            throw ApiException.badRequest(ErrorCodes.ASSIGNMENT_NOT_DRAFT, "Задание «" + assignment.getTitle()
-                    + "» уже опубликовано");
-        }
-        if (assignment.getTitle() == null || assignment.getTitle().isBlank()) {
-            throw ApiException.badRequest(ErrorCodes.ASSIGNMENT_TITLE_REQUIRED,
-                    "У черновика нет названия: без него задание нельзя опубликовать");
-        }
-    }
-
-    /** Makes the drafts ACTIVE, hands them out and audits the count; returns the number of student tasks created. */
-    private int publishAndHandOut(User user, Long courseId, List<Assignment> drafts) {
-        drafts.forEach(assignment -> assignment.setStatus(AssignmentStatus.ACTIVE));
-        assignmentRepository.saveAllAndFlush(drafts);
-        int tasksCreated = handOut(courseId);
-        events.published(courseId, drafts.get(0).getCourse().getTitle(), drafts.stream().map(Assignment::getTitle).toList());
-        auditService.record(user.getEmail(), AuditService.ASSIGNMENT_PUBLISHED, drafts.size()
-                + " assignment(s) of course " + courseId + ": " + drafts.stream().map(Assignment::getId).toList()
-                + ", " + tasksCreated + " student task(s)");
-        log.info("User {} published {} assignment(s) of course {} ({} student task(s))",
-                user.getEmail(), drafts.size(), courseId, tasksCreated);
-        return tasksCreated;
-    }
-
     /**
      * A new max_score must not go below grades already given: 400 MAX_SCORE_BELOW_GRADES naming how many are above it.
      * Without a max score (null) grades may go up to GradingService.DEFAULT_MAX_SCORE (1000).
@@ -502,41 +441,6 @@ public class AssignmentService {
                 + " \"" + assignment.getTitle() + "\" of course " + courseId + ": " + reason);
         log.info("Assignment {} of course {} closed ({}) by {}", assignment.getId(), courseId, reason,
                 actorEmail == null ? "the system" : actorEmail);
-    }
-
-    /**
-     * Flags each new AI draft that looks like an assignment already in the course (any source, any status;
-     * AssignmentTitles.likelySame), preferring a published one, then the oldest. Drafts of this same analysis are not
-     * compared with each other, so two drafts never point at one another. Only flags: nothing is merged or removed.
-     */
-    private void markDuplicates(Long courseId, List<Assignment> created) {
-        List<Assignment> drafts = created.stream()
-                .filter(assignment -> assignment.getStatus() == AssignmentStatus.DRAFT).toList();
-        if (drafts.isEmpty()) {
-            return;
-        }
-        Set<Long> batch = new HashSet<>(drafts.stream().map(Assignment::getId).toList());
-        List<AssignmentRepository.MatchInfo> candidates = assignmentRepository.findMatchInfoByCourseId(courseId).stream()
-                .filter(candidate -> !batch.contains(candidate.id()))
-                .sorted(Comparator.comparing((AssignmentRepository.MatchInfo candidate) ->
-                                candidate.status() == AssignmentStatus.DRAFT)
-                        .thenComparing(AssignmentRepository.MatchInfo::id))
-                .toList();
-        List<Assignment> marked = new ArrayList<>();
-        for (Assignment draft : drafts) {
-            candidates.stream()
-                    .filter(candidate -> AssignmentTitles.likelySame(draft.getTitle(), draft.getDeadline(),
-                            candidate.title(), candidate.deadline()))
-                    .findFirst()
-                    .ifPresent(original -> {
-                        draft.setDuplicateOf(assignmentRepository.getReferenceById(original.id()));
-                        marked.add(draft);
-                    });
-        }
-        if (!marked.isEmpty()) {
-            assignmentRepository.saveAllAndFlush(marked);
-            log.info("Course {}: {} new AI draft(s) look like existing assignments", courseId, marked.size());
-        }
     }
 
     /** The key re-analysis matches this assignment by: the one from before the teacher took it over, if they did. */

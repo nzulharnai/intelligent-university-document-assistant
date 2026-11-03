@@ -80,8 +80,8 @@ tests cannot: the browser, real e-mail, the scheduler on its own clock, and an u
 ## Notifications (US-13)
 
 - [ ] S2 opens "Профиль" and clears "Присылать уведомления на почту" ("Письма с уведомлениями отключены").
-- [ ] T publishes two drafts at once. S and S2: the bell shows a count; the panel says "Новые задания: 2" with both
-      titles. S gets one e-mail with "Открыть в UniDocs" and "Отключить письма можно в профиле"; S2 gets none.
+- [ ] T uploads a file from which the AI finds two assignments. S and S2: the bell shows a count; the panel says
+      "Новые задания: 2" with both titles. S gets one e-mail with "Открыть в UniDocs" and "Отключить письма можно в профиле"; S2 gets none.
 - [ ] Clicking a notification opens "Панель" and lowers the count; "Прочитать все" clears it.
 - [ ] `/notifications` ("Все уведомления"): newest first, "Показать ещё" with more than 20; "Прочитать все" there also
       clears the bell at once.
@@ -96,7 +96,8 @@ tests cannot: the browser, real e-mail, the scheduler on its own clock, and an u
 - [ ] S has a task due in the next 24 hours, nothing handed in. Wait for the cron or run it as D (below): S gets
       "Срок сдачи «…» — завтра в …" (or "сегодня в …"), once. The log shows `Deadline reminders: N sent`.
 - [ ] A second run sends nothing for the same task.
-- [ ] No reminder for a handed-in task, a closed assignment, a draft, or a student who left the course.
+- [ ] No reminder for a handed-in task, a closed assignment, a deadline that passed before the student enrolled, or
+      a student who left the course.
 - [ ] T moves that deadline later (still within 24 h): the next run reminds again. Moving it earlier does not.
 
 ## Dean's office (D, ADMIN)

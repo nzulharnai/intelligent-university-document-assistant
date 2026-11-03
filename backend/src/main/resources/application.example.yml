@@ -170,6 +170,3 @@ app:
     # Tries per AI call, the first one included, when the API answers 429 (rate limit) or 5xx. Waits for Retry-After
     # (at most 20 s) or else 2 s, 4 s, ... Other errors and timeouts are never retried. Missing or < 1 means 3.
     max-attempts: ${AI_MAX_ATTEMPTS:3}
-    # Assignments and deadlines the AI finds in a document start as drafts: the course teacher reviews and publishes
-    # them (course page, "Черновики от ИИ") before students see them or get tasks. true = publish at once, as before.
-    auto-publish-assignments: ${AI_AUTO_PUBLISH_ASSIGNMENTS:false}

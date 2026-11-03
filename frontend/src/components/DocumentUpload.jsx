@@ -320,7 +320,7 @@ export default function DocumentUpload({ course, onUploaded }) {
           result={result}
           viewOf={viewOf}
           deadlineNotices={deadlineNotices}
-          assignmentsLink={(document, anchor = 'assignments') => (course ? `#${anchor}` : `/courses/${document.courseId}#${anchor}`)}
+          assignmentsLink={(document) => (course ? '#assignments' : `/courses/${document.courseId}#assignments`)}
           onClose={() => setResult(null)}
         />
       )}
@@ -392,19 +392,10 @@ function UploadResult({ result, viewOf, deadlineNotices, assignmentsLink, onClos
           {deadlineNotices.map(({ document, view }) => (
             <li key={document.id} className="flex flex-wrap items-center gap-1.5 rounded-control bg-success-soft px-2 py-1.5 text-xs text-success-fg">
               <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-              {view.draftsCount > 0 ? (
-                <>
-                  <span className="min-w-0">
-                    ИИ нашёл {countAssignments(view.draftsCount)} — проверьте и опубликуйте («{document.originalFileName}»)
-                  </span>
-                  <AssignmentsLink to={assignmentsLink(document, 'drafts')} label="К черновикам" />
-                </>
-              ) : (
-                <>
-                  <span className="min-w-0">ИИ создал дедлайнов: {view.assignmentsCount} — «{document.originalFileName}»</span>
-                  <AssignmentsLink to={assignmentsLink(document)} />
-                </>
-              )}
+              <span className="min-w-0">
+                ИИ добавил {countAssignments(view.assignmentsCount)} из «{document.originalFileName}»
+              </span>
+              <AssignmentsLink to={assignmentsLink(document)} />
             </li>
           ))}
         </ul>

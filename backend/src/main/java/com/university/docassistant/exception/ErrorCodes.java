@@ -54,17 +54,13 @@ public final class ErrorCodes {
     public static final String ASSIGNMENT_HAS_ACTIVITY = "ASSIGNMENT_HAS_ACTIVITY";
     /** 409: the assignment is closed and takes no more submissions. */
     public static final String ASSIGNMENT_CLOSED = "ASSIGNMENT_CLOSED";
-    /** 400: publishing something that is not a DRAFT of this course (unknown id, other course, already published). */
-    public static final String ASSIGNMENT_NOT_DRAFT = "ASSIGNMENT_NOT_DRAFT";
-    /** 400: a draft without a title cannot be published. */
+    /** 400: an assignment without a title. */
     public static final String ASSIGNMENT_TITLE_REQUIRED = "ASSIGNMENT_TITLE_REQUIRED";
     /**
      * 400: PATCH lowers max_score below existing grades of the assignment (or clears it while a grade is above 1000);
      * the message says how many grades are in the way.
      */
     public static final String MAX_SCORE_BELOW_GRADES = "MAX_SCORE_BELOW_GRADES";
-    /** 400: a DRAFT cannot be closed (that would show it to students); publish or delete it. */
-    public static final String ASSIGNMENT_IS_DRAFT = "ASSIGNMENT_IS_DRAFT";
     /** 403: the original file contains personal data and the course teacher has not opened it to students. */
     public static final String PII_ORIGINAL_RESTRICTED = "PII_ORIGINAL_RESTRICTED";
     /** 503: OCR is switched off or Tesseract is missing on the server (US-07). */

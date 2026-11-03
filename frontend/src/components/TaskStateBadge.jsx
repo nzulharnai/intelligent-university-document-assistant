@@ -22,7 +22,7 @@ const EXCUSE_STYLES = {
 
 /**
  * Look of a task's state: { tone, icon, label }, or null for a status that is not a task status (e.g. an
- * assignment's DRAFT/ACTIVE/CLOSED). A late hand-in waiting for a grade is "Сдано с опозданием"; {@code excuse}
+ * assignment's ACTIVE/CLOSED). A late hand-in waiting for a grade is "Сдано с опозданием"; {@code excuse}
  * ('CLOSED' / 'BEFORE_ENROLLMENT' from deadlineExcuse) gives "Задание закрыто" / "Срок прошёл до записи".
  */
 // eslint-disable-next-line react-refresh/only-export-components

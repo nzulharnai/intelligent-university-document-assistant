@@ -125,11 +125,9 @@ export const CODE_MESSAGES = {
   ASSIGNMENT_NOT_FOUND: 'Задание не найдено',
   ASSIGNMENT_HAS_ACTIVITY: localized('Студенты уже работают над этим заданием, поэтому удалить его нельзя. Закройте задание: оно останется в курсе вместе с решениями.'),
   ASSIGNMENT_CLOSED: 'Задание закрыто, новые решения не принимаются.',
-  ASSIGNMENT_NOT_DRAFT: localized('Опубликовать можно только черновики этого курса. Обновите страницу.'),
-  ASSIGNMENT_TITLE_REQUIRED: 'У черновика нет названия: без него задание нельзя опубликовать.',
+  ASSIGNMENT_TITLE_REQUIRED: 'Укажите название задания.',
   // The server's text says how many grades are above the new maximum.
   MAX_SCORE_BELOW_GRADES: (data) => data?.message || 'Некоторые оценки выше нового максимума — сначала измените их.',
-  ASSIGNMENT_IS_DRAFT: localized('Это черновик: сначала опубликуйте его или удалите.'),
   OCR_UNAVAILABLE: 'Распознавание сканов не настроено на сервере. Обратитесь в деканат.',
   OCR_NOT_FAILED: 'Повторить можно только неудавшееся распознавание: сейчас оно не требуется или уже идёт.',
   DOCUMENT_BEING_PROCESSED: 'ИИ или распознавание ещё обрабатывают документ. Подождите, пока они закончат.',
