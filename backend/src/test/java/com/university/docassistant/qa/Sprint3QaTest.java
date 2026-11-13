@@ -108,6 +108,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -185,7 +186,7 @@ class Sprint3QaTest {
     private final DocumentPrivacyService privacy = new DocumentPrivacyService(new PrivacyProperties(true, List.of()));
     private final AccessControlService access = new AccessControlService(users, courses, documents, enrollments, audit);
     private final AssignmentService assignments = new AssignmentService(assignmentRows, taskRows, courses, documents,
-            access, audit, events, false);
+            access, audit, events);
     private final DocumentOcrService ocr = new DocumentOcrService(tesseract, documents, storage, privacy, chunker,
             transactions);
     private final DocumentClassificationService classifier = new DocumentClassificationService(ai, classificationRows,
@@ -259,55 +260,41 @@ class Sprint3QaTest {
     }
 
     @Nested
-    @DisplayName("QA-AI-008: deadlines found by the AI are drafts the teacher reviews")
+    @DisplayName("QA-AI-008: deadlines found by the AI are published at once (no draft step, at the teacher's request)")
     class QaAi008 {
 
         @Test
-        @DisplayName("syllabus analysis creates drafts only: no student gets a task, students cannot list drafts")
-        void analysisCreatesDraftsOnly() throws IOException {
+        @DisplayName("syllabus analysis creates ACTIVE assignments, hands them out to every enrolled student once and announces them")
+        void analysisPublishesAndHandsOut() throws IOException {
             long syllabus = uploadAndProcess("syllabus.txt", SYLLABUS);
 
             assertThat(documentTable.get(syllabus).getCategory()).isEqualTo(DocumentCategory.SYLLABUS);
             assertThat(assignmentTable.values()).hasSize(2).allSatisfy(assignment -> {
-                assertThat(assignment.getStatus()).isEqualTo(AssignmentStatus.DRAFT);
+                assertThat(assignment.getStatus()).isEqualTo(AssignmentStatus.ACTIVE);
                 assertThat(assignment.getSourceDocument().getId()).isEqualTo(syllabus);
             });
             assertThat(assignmentTable.values()).extracting(Assignment::getTitle, Assignment::getDeadline)
                     .containsExactly(org.assertj.core.groups.Tuple.tuple("Лабораторная работа 1", LAB1_DEADLINE),
                             org.assertj.core.groups.Tuple.tuple("Лабораторная работа 2",
                                     LocalDateTime.of(2026, 11, 15, 23, 59)));
-            assertThat(taskTable).isEmpty();
-            assertForbidden(() -> assignments.drafts(COURSE_ID, STUDENT_EMAIL, Pageable.unpaged()), null);
-            assertForbidden(() -> assignments.publishAll(COURSE_ID, draftIds(), STUDENT_EMAIL), null);
-            assertThat(taskTable).isEmpty();
-        }
-
-        @Test
-        @DisplayName("publishing hands the tasks out to every enrolled student, once")
-        void publishingHandsOutTasks() throws IOException {
-            uploadAndProcess("syllabus.txt", SYLLABUS);
-
-            assignments.publishAll(COURSE_ID, draftIds(), TEACHER_EMAIL);
-
-            assertThat(assignmentTable.values()).extracting(Assignment::getStatus).containsOnly(AssignmentStatus.ACTIVE);
             assertThat(taskTable).hasSize(4).allSatisfy(task -> assertThat(task.getStatus()).isEqualTo(TaskStatus.PENDING));
             assertThat(tasksOf(student)).extracting(Task::getTitle)
                     .containsExactlyInAnyOrder("Лабораторная работа 1", "Лабораторная работа 2");
             assertThat(tasksOf(classmate)).hasSize(2);
-            verify(audit).record(eq(TEACHER_EMAIL), eq(AuditService.ASSIGNMENT_PUBLISHED), contains("4 student task(s)"));
+            verify(events).published(eq(COURSE_ID), any(), eq(List.of("Лабораторная работа 1", "Лабораторная работа 2")));
+            verify(audit).record(isNull(), eq(AuditService.ASSIGNMENT_PUBLISHED), contains("4 student task(s)"));
 
-            // A second publish is refused and hands out nothing twice.
-            assertThatThrownBy(() -> assignments.publishAll(COURSE_ID, List.copyOf(assignmentTable.keySet()),
-                    TEACHER_EMAIL)).isInstanceOfSatisfying(ApiException.class,
-                    ex -> assertThat(ex.getCode()).isEqualTo(ErrorCodes.ASSIGNMENT_NOT_DRAFT));
+            // The AI reads the syllabus again: nothing new, nothing handed out or announced twice.
+            analysis.analyzeNow(syllabus, false);
+            assertThat(assignmentTable).hasSize(2);
             assertThat(taskTable).hasSize(4);
+            verify(events).published(anyLong(), any(), any());
         }
 
         @Test
         @DisplayName("editing a published deadline reaches the tasks and keeps student progress, also after re-analysis")
         void editingAPublishedDeadlineKeepsStudentProgress() throws IOException {
             long syllabus = uploadAndProcess("syllabus.txt", SYLLABUS);
-            assignments.publishAll(COURSE_ID, draftIds(), TEACHER_EMAIL);
             Assignment lab1 = assignmentTitled("Лабораторная работа 1");
             Task studentsLab1 = taskOf(student, lab1);
             studentsLab1.setStatus(TaskStatus.IN_PROGRESS); // The student started working on it.
@@ -336,31 +323,24 @@ class Sprint3QaTest {
         }
 
         @Test
-        @DisplayName("a draft that looks like a published assignment is marked as a duplicate, never merged")
-        void duplicateDraftIsMarked() throws IOException {
+        @DisplayName("an assignment the course already has (same title, same day) is skipped, another number is added")
+        void duplicateIsSkipped() throws IOException {
             uploadAndProcess("syllabus.txt", SYLLABUS);
-            assignments.publishAll(COURSE_ID, draftIds(), TEACHER_EMAIL);
-            Assignment lab1 = assignmentTitled("Лабораторная работа 1");
 
-            // A lab sheet for the same lab, uploaded later, with the title written differently.
+            // A lab sheet uploaded later names lab 1 again (written differently, same day) and a new lab 3.
             analysisReply = """
-                    {"summary": "Лабораторная 1", "topics": [], "tasks": [
-                      {"title": "Лаб. №1: сортировки", "deadline": "2026-11-01T18:00:00"}]}""";
+                    {"summary": "Лабораторные", "topics": [], "tasks": [
+                      {"title": "Лабораторная работа №1", "deadline": "2026-11-01T18:00:00"},
+                      {"title": "Лабораторная работа №3", "deadline": "2026-11-01T18:00:00"}]}""";
             classificationReply = "{\"category\": \"ASSIGNMENT\", \"confidence\": 0.91}";
-            long labSheet = uploadAndProcess("lab1.txt", "Лабораторная работа №1. Реализуйте сортировку слиянием и "
-                    + "быструю сортировку, сравните время работы. Срок сдачи: 2026-11-01 18:00.");
+            long labSheet = uploadAndProcess("labs.txt", "Лабораторная работа №1 и №3. Реализуйте сортировку слиянием "
+                    + "и быструю сортировку, сравните время работы. Срок сдачи: 2026-11-01 18:00.");
 
-            Assignment draft = assignmentTable.values().stream()
-                    .filter(assignment -> assignment.getSourceDocument().getId() == labSheet).findFirst().orElseThrow();
-            assertThat(draft.getStatus()).isEqualTo(AssignmentStatus.DRAFT);
-            assertThat(draft.getDuplicateOf()).isSameAs(lab1);
-            assertThat(lab1.getStatus()).isEqualTo(AssignmentStatus.ACTIVE);
+            assertThat(assignmentTable.values()).filteredOn(assignment -> assignment.getSourceDocument().getId() == labSheet)
+                    .extracting(Assignment::getTitle).containsExactly("Лабораторная работа №3");
             assertThat(assignmentTable).hasSize(3);
-            assertThat(taskTable).hasSize(4); // The draft is not handed out.
-
-            // "Это другое задание" clears the mark.
-            assignments.notDuplicate(draft.getId(), TEACHER_EMAIL);
-            assertThat(draft.getDuplicateOf()).isNull();
+            assertThat(taskTable).as("lab 3 for both students, nothing twice for lab 1").hasSize(6);
+            verify(events).published(eq(COURSE_ID), any(), eq(List.of("Лабораторная работа №3")));
         }
     }
 
@@ -487,8 +467,8 @@ class Sprint3QaTest {
         }
 
         @Test
-        @DisplayName("upload only queues it; the worker runs OCR, then masking, classification and deadline drafts")
-        void scanGoesThroughOcrThenMaskingClassificationAndDrafts() throws Exception {
+        @DisplayName("upload only queues it; the worker runs OCR, then masking, classification and the deadlines")
+        void scanGoesThroughOcrThenMaskingClassificationAndDeadlines() throws Exception {
             Document document = documentTable.get(scan);
             assertThat(document.getOcrStatus()).isEqualTo(OcrStatus.PENDING);
             assertThat(document.getAiStatus()).isEqualTo(AiStatus.PENDING);
@@ -517,8 +497,8 @@ class Sprint3QaTest {
             assertThat(document.getAiStatus()).isEqualTo(AiStatus.DONE);
             assertThat(document.getCategory()).isEqualTo(DocumentCategory.SYLLABUS);
             assertThat(assignmentTable.values()).hasSize(2)
-                    .extracting(Assignment::getStatus).containsOnly(AssignmentStatus.DRAFT);
-            assertThat(taskTable).isEmpty();
+                    .extracting(Assignment::getStatus).containsOnly(AssignmentStatus.ACTIVE);
+            assertThat(taskTable).hasSize(4);
             assertThat(aiRequests).hasSize(2).allSatisfy(Sprint3QaTest::assertNoPersonalData);
 
             // Now the student sees it, marked as recognized, with the masked text.
@@ -570,7 +550,7 @@ class Sprint3QaTest {
             assertThat(document.getOcrStatus()).isEqualTo(OcrStatus.DONE);
             assertThat(document.getAiStatus()).isEqualTo(AiStatus.DONE);
             assertThat(assignmentTable.values()).hasSize(2)
-                    .extracting(Assignment::getStatus).containsOnly(AssignmentStatus.DRAFT);
+                    .extracting(Assignment::getStatus).containsOnly(AssignmentStatus.ACTIVE);
         }
     }
 
@@ -597,11 +577,6 @@ class Sprint3QaTest {
 
     private long lastDocumentId() {
         return documentTable.lastKey();
-    }
-
-    private List<Long> draftIds() {
-        return assignmentTable.values().stream()
-                .filter(assignment -> assignment.getStatus() == AssignmentStatus.DRAFT).map(Assignment::getId).toList();
     }
 
     private Assignment assignmentTitled(String title) {
@@ -777,7 +752,7 @@ class Sprint3QaTest {
             Assignment assignment = assignmentTable.get(invocation.<Long>getArgument(0));
             return Optional.of(new AssignmentResponse(assignment.getId(), assignment.getTitle(),
                     assignment.getRequirements(), assignment.getDeadline(), assignment.getStatus(), COURSE_ID,
-                    inf345.getTitle(), inf345.getCode(), null, null, null, null, null, null, false, true, null));
+                    inf345.getTitle(), inf345.getCode(), null, null, null, false, true, null));
         });
 
         // fanOut: one task per enrolled student for each ACTIVE assignment of the course that lacks one.

@@ -3,7 +3,6 @@ package com.university.docassistant.service;
 import com.university.docassistant.config.PrivacyProperties;
 import com.university.docassistant.dto.DocumentStatusItem;
 import com.university.docassistant.entity.AiStatus;
-import com.university.docassistant.entity.AssignmentStatus;
 import com.university.docassistant.entity.DocumentCategory;
 import com.university.docassistant.entity.DocumentVisibility;
 import com.university.docassistant.entity.Role;
@@ -73,9 +72,8 @@ class DocumentStatusBatchTest {
         when(courses.findAllIds()).thenReturn(List.of(10L, 20L));
         when(documents.findStatusRows(anyCollection())).thenReturn(rows);
         List<Object[]> counts = new ArrayList<>();
-        counts.add(new Object[]{1L, AssignmentStatus.ACTIVE, 3L});
-        counts.add(new Object[]{1L, AssignmentStatus.DRAFT, 2L}); // AI drafts: only the course's teacher/ADMIN learn of them.
-        when(assignments.countByStatusForSourceDocumentIds(anyCollection())).thenReturn(counts);
+        counts.add(new Object[]{1L, 3L});
+        when(assignments.countBySourceDocumentIds(anyCollection())).thenReturn(counts);
     }
 
     @Test
@@ -87,9 +85,8 @@ class DocumentStatusBatchTest {
         assertThat(syllabus.aiStatus()).isEqualTo(AiStatus.DONE);
         assertThat(syllabus.aiConfidence()).isEqualTo(0.96);
         assertThat(syllabus.assignmentsCount()).isEqualTo(3);
-        assertThat(syllabus.draftsCount()).isZero();
         // The count query only asks about what the user may see.
-        verify(assignments).countByStatusForSourceDocumentIds(List.of(1L));
+        verify(assignments).countBySourceDocumentIds(List.of(1L));
     }
 
     @Test
@@ -102,8 +99,7 @@ class DocumentStatusBatchTest {
         assertThat(result.get(1).aiConfidence()).isNull();
         assertThat(result.get(2).aiConfidence()).isNull();
         assertThat(result.get(1).assignmentsCount()).isZero();
-        assertThat(result.get(0).assignmentsCount()).isEqualTo(5);
-        assertThat(result.get(0).draftsCount()).isEqualTo(2);
+        assertThat(result.get(0).assignmentsCount()).as("the same count as a student's").isEqualTo(3);
     }
 
     @Test

@@ -168,8 +168,8 @@ public class Document {
     private LocalDateTime aiAnalyzedAt;
 
     /**
-     * The last AI analysis covered only part of a long text (a chunk got no usable answer): its drafts may miss
-     * assignments, "ИИ обработал документ не полностью" for the teacher. Cleared by the next complete analysis.
+     * The last AI analysis covered only part of a long text (a chunk got no usable answer): its assignments may
+     * be incomplete, "ИИ обработал документ не полностью" for the teacher. Cleared by the next complete analysis.
      */
     @Column(name = "ai_extraction_partial", nullable = false)
     @ColumnDefault("false")

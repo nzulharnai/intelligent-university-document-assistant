@@ -93,7 +93,7 @@ public class DocumentProcessingService {
     /**
      * Classifies one PENDING document in the caller's thread; does nothing for any other status. Never throws.
      * Order: OCR of a scan (if queued) -> masking and chunks (stored with the recognized text) -> classification ->
-     * deadline drafts.
+     * deadlines (published as assignments at once).
      */
     public void process(Long documentId) {
         DocumentCategory finalCategory;

@@ -75,16 +75,6 @@ public class Assignment {
     @Column(name = "ai_match_key", length = 300)
     private String aiMatchKey;
 
-    /**
-     * An AI draft that looks like this existing assignment of the course (AssignmentTitles.likelySame): shown to the
-     * teacher as "Похоже на", never merged automatically. Cleared by the teacher ("Это другое задание") or when that
-     * assignment is deleted (ON DELETE SET NULL).
-     */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "duplicate_of_id")
-    @OnDelete(action = OnDeleteAction.SET_NULL)
-    private Assignment duplicateOf;
-
     /** Submissions after the deadline are accepted (and marked late); false refuses them. */
     @Column(name = "allow_late", nullable = false)
     @ColumnDefault("true")

@@ -97,7 +97,7 @@ class DeadlineReminderPostgresTest {
         student = persist(user("s@uni.kz", Role.ROLE_STUDENT));
         leaver = persist(user("left@uni.kz", Role.ROLE_STUDENT));
         course = persist(Course.builder().title("Алгоритмы").code("ALG").teacher(teacher).build());
-        enrollments.enroll(course.getId(), student.getId());
+        enrollments.enroll(course.getId(), student.getId(), LocalDateTime.now());
     }
 
     @Test
@@ -121,7 +121,6 @@ class DeadlineReminderPostgresTest {
         task("Сдано", student, TaskStatus.SUBMITTED, soon, AssignmentStatus.ACTIVE);
         task("Оценено", student, TaskStatus.GRADED, soon, AssignmentStatus.ACTIVE);
         task("Закрыто", student, TaskStatus.PENDING, soon, AssignmentStatus.CLOSED);
-        task("Черновик", student, TaskStatus.PENDING, soon, AssignmentStatus.DRAFT);
         task("Ушёл с курса", leaver, TaskStatus.PENDING, soon, AssignmentStatus.ACTIVE);
         task("Через двое суток", student, TaskStatus.PENDING, NOW.plusHours(25), AssignmentStatus.ACTIVE);
         task("Уже прошло", student, TaskStatus.PENDING, NOW.minusMinutes(1), AssignmentStatus.ACTIVE);

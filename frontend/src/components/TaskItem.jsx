@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Award, BookOpen, ChevronDown, FileText, Loader2, Lock, MessageSquareText, Trash2 } from 'lucide-react'
+import { Award, BookOpen, ChevronDown, FileText, Loader2, Lock, MessageSquareText, Sparkles, Trash2 } from 'lucide-react'
 import { ASSIGNMENT_TASK_STATUSES, LEGACY_TASK_STATUSES, TASK_STATUS_LABELS } from '../constants/documents'
-import { getDeadlineInfo, getTaskType, isOverdue } from '../utils/tasks'
+import { deadlineExcuse, getDeadlineInfo, getTaskType, isOverdue } from '../utils/tasks'
 import TaskStateBadge, { taskState } from './TaskStateBadge'
 import Badge from './ui/Badge'
 import Button from './ui/Button'
@@ -12,23 +12,37 @@ import { badgeClass } from './ui/styles'
  * (own tasks: "Не начато" / "В работе" on an assignment task, also "Выполнено" on a legacy one) until the system sets
  * "Сдано" or "Оценено"; otherwise, and then, a read-only badge when the status is a task status; {@code showDocument} links the source
  * document; {@code onDelete} adds a delete button (assignments, for the course teacher); {@code actions} adds more
- * buttons next to it; {@code extra} is rendered under the tags (submissions). A closed assignment - or a student's
- * task of one - is marked "Закрыто". A student's overdue task (nothing handed in, deadline passed) is highlighted
+ * buttons next to it; {@code extra} is rendered under the tags (submissions). An assignment the AI found in a
+ * document has the tag "Найдено ИИ". A closed assignment - or a student's
+ * task of one - is marked "Закрыто" (with nothing handed in: the chip "Задание закрыто", never overdue; likewise
+ * "Срок прошёл до записи" for a deadline that passed before the student enrolled). A student's overdue task (nothing
+ * handed in, deadline passed, assignment open) is highlighted
  * with a red edge and the "Просрочено" tag (icon + text, never the color alone); graded work shows the score
  * "8 / 10" and the teacher's feedback, expandable.
  */
+/** Tooltip of "Срок прошёл до записи": whether work is still accepted. */
+const beforeEnrollmentHint = (task) => (task.allowLate
+  ? 'Срок прошёл до вашей записи на курс. Сдать работу ещё можно — она будет отмечена «с опозданием».'
+  : 'Срок прошёл до вашей записи на курс; задание не принимает работы после срока.')
+
 export default function TaskItem({ task, onStatusChange, onDelete, actions = null, updating = false, showDocument = false, extra = null }) {
   const type = getTaskType(task)
-  const deadline = getDeadlineInfo(task.deadline, task.status)
+  // A student's task (a task status) with nothing handed in that is not overdue: closed, or deadline before enrollment.
+  const excuse = taskState(task.status) ? deadlineExcuse(task) : null
+  const deadline = getDeadlineInfo(task.deadline, task.status, undefined, Boolean(excuse))
   const completed = task.status === 'COMPLETED'
-  const closed = task.status === 'CLOSED' || task.assignmentStatus === 'CLOSED'
+  // The excuse chip already says "Задание закрыто"; no second "Закрыто" tag then.
+  const closed = (task.status === 'CLOSED' || task.assignmentStatus === 'CLOSED') && excuse !== 'CLOSED'
+  // A course assignment (not a student's task) the AI found in a document.
+  const aiFound = Boolean(task.sourceDocumentId)
   const documentId = task.documentId ?? task.sourceDocumentId
   const documentName = task.documentName ?? task.sourceDocumentName
   const location = useLocation()
   const status = taskState(task.status, task.late)
   const StatusIcon = status?.icon
   const choices = task.assignmentId ? ASSIGNMENT_TASK_STATUSES : LEGACY_TASK_STATUSES
-  const editable = onStatusChange && choices.includes(task.status)
+  // An excused task shows its chip instead of the status select.
+  const editable = onStatusChange && choices.includes(task.status) && !excuse
   // Only a student's task (a task status) is overdue; an assignment in the teacher's list keeps the plain tag.
   const overdue = Boolean(status) && isOverdue(task)
   const graded = task.status === 'GRADED' && task.score != null
@@ -46,6 +60,11 @@ export default function TaskItem({ task, onStatusChange, onDelete, actions = nul
         )}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <Badge tone={type.tone} icon={type.icon}>{type.label}</Badge>
+          {aiFound && (
+            <Badge tone="accent" icon={Sparkles} title="Задание найдено ИИ в документе курса; преподаватель может изменить или закрыть его">
+              Найдено ИИ
+            </Badge>
+          )}
           {closed && (
             <Badge tone="neutral" icon={Lock} title="Задание закрыто: новые решения не принимаются">Закрыто</Badge>
           )}
@@ -101,7 +120,13 @@ export default function TaskItem({ task, onStatusChange, onDelete, actions = nul
           </select>
         </label>
       ) : (
-        <TaskStateBadge status={task.status} late={task.late} className="self-start" />
+        <TaskStateBadge
+          status={task.status}
+          late={task.late}
+          excuse={excuse}
+          title={excuse === 'BEFORE_ENROLLMENT' ? beforeEnrollmentHint(task) : undefined}
+          className="self-start"
+        />
       )}
       {actions}
       {onDelete && (

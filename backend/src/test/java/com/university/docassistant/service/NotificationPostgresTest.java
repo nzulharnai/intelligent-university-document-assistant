@@ -114,8 +114,8 @@ class NotificationPostgresTest {
             wantsMail = users.save(user("mail@uni.kz", Role.ROLE_STUDENT, true));
             noMail = users.save(user("quiet@uni.kz", Role.ROLE_STUDENT, false));
             course = courses.save(Course.builder().title("Алгоритмы").code("ALG").teacher(teacher).build());
-            enrollments.enroll(course.getId(), wantsMail.getId());
-            enrollments.enroll(course.getId(), noMail.getId());
+            enrollments.enroll(course.getId(), wantsMail.getId(), LocalDateTime.now());
+            enrollments.enroll(course.getId(), noMail.getId(), LocalDateTime.now());
         });
     }
 

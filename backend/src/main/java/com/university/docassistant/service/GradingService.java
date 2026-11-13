@@ -7,6 +7,7 @@ import com.university.docassistant.dto.GradingDtos.GradingResponse;
 import com.university.docassistant.dto.GradingDtos.GradingStudent;
 import com.university.docassistant.dto.PageResponse;
 import com.university.docassistant.dto.SubmissionDtos.SubmissionResponse;
+import com.university.docassistant.entity.AssignmentStatus;
 import com.university.docassistant.entity.TaskStatus;
 import com.university.docassistant.entity.User;
 import com.university.docassistant.exception.ApiException;
@@ -28,13 +29,17 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * US-11: the course's teacher (or ADMIN) grades students' work on an assignment and gives feedback. A task is graded
- * whether or not something was handed in (0 for "не сдано" is a grade too); grading again replaces the grade, and
+ * US-11: the course's teacher (or ADMIN) grades students' work on an assignment and gives feedback. Handed-in work is
+ * graded at any time. A task with nothing handed in (0 for "не сдано" is a grade too) only once the student can no
+ * longer hand in by the deadline: the assignment has no deadline, the deadline has passed (shared Clock) or the
+ * assignment is CLOSED - otherwise 409 GRADE_TOO_EARLY, since a GRADED task refuses hand-ins. Grading again replaces
+ * the grade, and
  * taking it back returns the task to SUBMITTED (or PENDING without a hand-in). Every change is audited with the old
  * and the new score; the student is notified (NotificationEvents: saved with the grade, e-mailed after commit).
  * The task's row is locked meanwhile, so a
@@ -47,6 +52,7 @@ public class GradingService {
 
     /** The highest score of an assignment without its own max_score. */
     static final BigDecimal DEFAULT_MAX_SCORE = BigDecimal.valueOf(1_000);
+    private static final DateTimeFormatter DEADLINE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
     private final TaskRepository taskRepository;
     private final TaskSubmissionRepository submissionRepository;
@@ -62,6 +68,7 @@ public class GradingService {
         GradeTarget target = authorize(grader, taskId);
         taskRepository.lockById(taskId);
         target = target(taskId);                     // As it is now, under the lock.
+        requireGradable(target, LocalDateTime.now(clock));
         BigDecimal score = validScore(request.score(), target.maxScore());
         String feedback = request.feedback() == null || request.feedback().isBlank() ? null : request.feedback().strip();
         taskRepository.grade(taskId, score, feedback, LocalDateTime.now(clock), grader);
@@ -120,6 +127,18 @@ public class GradingService {
     private GradeTarget target(Long taskId) {
         return taskRepository.findGradeTargetById(taskId)
                 .orElseThrow(() -> ApiException.notFound(ErrorCodes.TASK_NOT_FOUND, "Task not found"));
+    }
+
+    /**
+     * Nothing handed in yet and the student may still hand in before the deadline: 409 GRADE_TOO_EARLY. Grading would
+     * make the task GRADED and SubmissionService would then refuse their work. At the deadline itself they still may.
+     */
+    static void requireGradable(GradeTarget target, LocalDateTime now) {
+        if (target.submittedAt() == null && target.deadline() != null && !now.isAfter(target.deadline())
+                && target.assignmentStatus() != AssignmentStatus.CLOSED) {
+            throw ApiException.conflict(ErrorCodes.GRADE_TOO_EARLY, "Студент ещё может сдать работу до "
+                    + DEADLINE_FORMAT.format(target.deadline()));
+        }
     }
 
     /** 0..max (0..1000 without a max score), at most one decimal; returned without trailing zeros. */

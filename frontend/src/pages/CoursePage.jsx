@@ -11,7 +11,6 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import ErrorState from '../components/ErrorState'
 import CourseChat from '../components/CourseChat'
 import CourseAssignments from '../components/CourseAssignments'
-import CourseDrafts from '../components/CourseDrafts'
 import CourseStudents from '../components/CourseStudents'
 import DocumentUpload from '../components/DocumentUpload'
 import DocumentAiBadge from '../components/DocumentAiBadge'
@@ -35,8 +34,6 @@ export default function CoursePage() {
   const [details, setDetails] = useState(null)
   const [error, setError] = useState(null)
   const [docsVersion, setDocsVersion] = useState(0) // Bumped after an upload to reload the list.
-  // Bumped after drafts are published, so the course's assignments list shows them.
-  const [assignmentsVersion, setAssignmentsVersion] = useState(0)
 
   const loadDetails = useCallback(() => api.get(`/courses/${id}`).then(({ data }) => setDetails(data)), [id])
 
@@ -126,10 +123,7 @@ export default function CoursePage() {
               <div className="space-y-6">
                 {canManage && <DocumentUpload course={course} onUploaded={() => setDocsVersion((version) => version + 1)} />}
                 <CourseDocuments courseId={course.id} canManage={canManage} version={docsVersion} />
-                {canManage && (
-                  <CourseDrafts courseId={course.id} version={docsVersion} onPublished={() => setAssignmentsVersion((version) => version + 1)} />
-                )}
-                <CourseAssignments courseId={course.id} canManage={canManage} version={docsVersion + assignmentsVersion} />
+                <CourseAssignments courseId={course.id} canManage={canManage} version={docsVersion} />
                 {canManage && <CourseStudents courseId={course.id} onChange={() => loadDetails().catch(() => {})} />}
               </div>
               <div className="lg:sticky lg:top-24 lg:self-start">

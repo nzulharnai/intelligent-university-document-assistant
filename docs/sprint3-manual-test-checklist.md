@@ -31,16 +31,13 @@ unit test cannot: the real Groq model, the real Tesseract, PostgreSQL and the br
 
 ## Teacher of INF345 (T)
 
-**AI drafts (US-08)**
-- [ ] Upload `syllabus.pdf` with "Определить автоматически (ИИ)". The upload notice reports drafts for review, not
-      published deadlines.
-- [ ] The course page shows "Черновики от ИИ (N)" with the labs, their deadlines and requirements. "Задания курса" does
-      not list them yet.
-- [ ] "Изменить" on a draft: change the title and the deadline, save. "Черновик сохранён"; the draft shows the new values.
-- [ ] Clear the deadline of a draft and click "Опубликовать": a confirmation warns "Нет срока сдачи…".
-- [ ] "Удалить черновик" asks for confirmation and removes it.
-- [ ] "Опубликовать все": the confirmation says "Их получат все студенты курса."; afterwards the drafts move to
-      "Задания курса" and the draft block disappears.
+**AI assignments (US-08; published at once since the Sprint 4 review fixes, at the teacher's request)**
+- [ ] Upload `syllabus.pdf` with "Определить автоматически (ИИ)". The upload notice says "ИИ добавил N заданий из
+      «syllabus.pdf»" with "К заданиям курса".
+- [ ] "Задания курса" lists the labs with their deadlines and requirements, each tagged "Найдено ИИ" with a link to
+      `syllabus.pdf`. There is no "Черновики от ИИ" section.
+- [ ] "Изменить" on an AI lab: change the title and the deadline, save. "Задание сохранено, студенты видят изменения".
+- [ ] An AI lab that is wrong can be closed ("Закрыть") or, while no student worked on it, deleted.
 
 **Editing a published assignment**
 - [ ] After S has set lab 1 to "В работе" (see below), "Изменить" lab 1 and move its deadline by a week. The toast says
@@ -52,10 +49,9 @@ unit test cannot: the real Groq model, the real Tesseract, PostgreSQL and the br
 - [ ] Delete a published assignment S has worked on: it is refused with "close it instead". Close it instead.
 
 **Duplicates**
-- [ ] Upload `lab1.docx` (automatic type). Its draft shows "Похоже на: Лабораторная работа 1 …" with
-      "Это дубль — удалить черновик" and "Это другое задание".
-- [ ] "Это другое задание" removes the mark ("Отметка «похоже на» снята"). Publishing a still-marked draft asks
-      "Опубликовать возможный дубль?".
+- [ ] Upload `lab1.docx` (automatic type) naming "Лабораторная работа №1" with the same deadline day as the syllabus's
+      lab 1: no second lab 1 appears, and the backend log says it was skipped ("the course already has …").
+- [ ] A file naming "Лабораторная работа 3" (a new number) adds lab 3.
 
 **Personal data (US-09)**
 - [ ] `syllabus.pdf` shows the badge "Личные данные: 3"; hovering lists the kinds.
@@ -66,7 +62,8 @@ unit test cannot: the real Groq model, the real Tesseract, PostgreSQL and the br
 
 **OCR (US-07)**
 - [ ] Upload `scan.pdf` (automatic type). The row and the course list show "Распознаём скан…", then the category
-      appears without a reload, with "Распознано со скана". For a syllabus, drafts appear in "Черновики от ИИ".
+      appears without a reload, with "Распознано со скана". For a syllabus, its labs appear in "Задания курса" as
+      "Найдено ИИ".
 - [ ] Tab "Текст" shows the recognized text (Russian and Kazakh letters readable).
 - [ ] Set `OCR_TIMEOUT=1s`, restart, upload the multi-page scan. The document stays in the course with
       "Нужна проверка"; its page shows the panel "Нужна проверка: текст скана распознать не удалось."
@@ -79,8 +76,7 @@ unit test cannot: the real Groq model, the real Tesseract, PostgreSQL and the br
 
 - [ ] While T's uploads are being classified or recognized ("Распознаём скан…" for T), S does not see them in the
       course list, in "Хранилище документов" or in search.
-- [ ] Before T publishes: S sees no drafts and has no new tasks in "Мои задачи". After "Опубликовать все": each lab is
-      in "Мои задачи".
+- [ ] Right after T's syllabus upload each lab is in "Мои задачи", and the bell shows "Новые задания: N".
 - [ ] Set lab 1 to "В работе" (and hand in a file if available). After T moves the deadline, the task shows the new
       deadline and is still "В работе" with the file.
 - [ ] Open `syllabus.pdf`: tab "Текст" shows "[ИИН скрыт]", "[телефон скрыт]", "[e-mail скрыт]" and
@@ -114,10 +110,10 @@ unit test cannot: the real Groq model, the real Tesseract, PostgreSQL and the br
 
 - [ ] T uploads a syllabus of 20+ pages with labs throughout (automatic type). The backend log shows several
       calls for that document, each at most `max-input-chars` (15000) long, possibly with 429 retries in between; the
-      drafts include labs from the last pages, each lab once.
+      assignments include labs from the last pages, each lab once.
 - [ ] With a deliberately low limit (e.g. `AI_MAX_INPUT_CHARS=3000`) and `AI_MAX_ATTEMPTS=1`, re-analyze it. A chunk
-      may end with 429 and a log line "chunk N of M got no usable answer". The drafts of the other chunks are kept,
-      and "Черновики от ИИ" shows "ИИ обработал документ не полностью — проверьте задания вручную" with a link to the
+      may end with 429 and a log line "chunk N of M got no usable answer". The assignments of the other chunks are kept,
+      and "Задания курса" shows T "ИИ обработал документ не полностью — проверьте задания вручную" with a link to the
       document. Published labs of that document are not closed.
 - [ ] Restore the settings and re-analyze: the notice disappears.
 
@@ -159,9 +155,9 @@ unit test cannot: the real Groq model, the real Tesseract, PostgreSQL and the br
 ## Review fix: final review, student paths
 
 As S, with T's course holding: a TEACHER_ONLY lecture, an `EXAM_ANSWERS` upload, a file still "Распознаём скан…",
-a file uploaded with `AI_ENABLED=false` ("Требуют проверки"), a failed scan, an unpublished draft, a syllabus with
+a file uploaded with `AI_ENABLED=false` ("Требуют проверки"), a failed scan, a syllabus with
 personal data and `Иванов_990101300013.pdf`.
-- [ ] Course list and course page: the course shows; no student list, no "Требуют проверки", no drafts block.
+- [ ] Course list and course page: the course shows; no student list, no "Требуют проверки", no partial-analysis warning.
 - [ ] Document list of the course, "Хранилище документов" and search (`Лекция`, a word of the exam answers, the file
       names): none of the hidden files appear; `Иванов_[ИИН скрыт].pdf` is the only form of that name.
 - [ ] Each hidden file by id: `GET /api/v1/documents/{id}`, `/text`, `/analysis`, `/view`, `/download`, `/status`,
@@ -170,8 +166,8 @@ personal data and `Иванов_990101300013.pdf`.
 - [ ] The syllabus: "Текст" masked, "Просмотр" and download 403 `PII_ORIGINAL_RESTRICTED`, document chat answers
       with placeholders only.
 - [ ] Course chat, a question about the exam answers or the hidden lecture: the answer cites none of them.
-- [ ] `GET /api/v1/courses/{id}/assignments/drafts` answers 403; "Задания курса" and "Мои задачи" list only published
-      assignments.
+- [ ] `GET /api/v1/courses/{id}/assignments/drafts` answers 404 (removed with the drafts); "Задания курса" and
+      "Мои задачи" list the course's assignments.
 
 ## Review fix: CI
 
@@ -181,7 +177,7 @@ personal data and `Иванов_990101300013.pdf`.
 
 ## Dean's office (D, ADMIN)
 
-- [ ] D sees the drafts of INF345 and can publish, edit, close and reopen like T.
+- [ ] D can edit, close and reopen the assignments of INF345 like T.
 - [ ] D's "Текст" tab shows the original; opening or downloading the original is audited under D's own e-mail.
 - [ ] D can use "Указать тип вручную" and "Повторить распознавание" on a failed scan.
 - [ ] The audit log on the admin page shows Russian labels, with no raw codes, for: publishing, editing a deadline, closing,

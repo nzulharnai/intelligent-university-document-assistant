@@ -1,11 +1,11 @@
 import { useId, useState } from 'react'
 import { Info, Pencil } from 'lucide-react'
-import api from '../api/axios'
+import api, { describeError } from '../api/axios'
 import { useToast } from '../context/ToastContext'
 import useConfirm from '../hooks/useConfirm'
 import Button from './ui/Button'
 import Dialog, { DialogActions } from './ui/Dialog'
-import { checkboxClass, controlClass as inputClass, hintClass, labelClass } from './ui/styles'
+import { checkboxClass, controlClass as inputClass, controlErrorClass, errorTextClass, hintClass, labelClass } from './ui/styles'
 
 // The backend keeps deadlines as wall-clock time of the university (no zone), like the datetime-local input.
 const toInputValue = (deadline) => (deadline ? deadline.slice(0, 16) : '')
@@ -27,8 +27,9 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
     maxScore: assignment.maxScore == null ? '' : String(assignment.maxScore),
   })
   const [saving, setSaving] = useState(false)
+  // MAX_SCORE_BELOW_GRADES from the server, shown under the field until the value changes.
+  const [maxScoreError, setMaxScoreError] = useState('')
 
-  const published = assignment.status !== 'DRAFT'
   const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }))
 
   const save = async (event) => {
@@ -52,11 +53,15 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
         allowLate: form.allowLate,
         maxScore: form.maxScore === '' ? null : Number(form.maxScore),
       })
-      showSuccess(published ? 'Задание сохранено, студенты видят изменения' : 'Черновик сохранён')
+      showSuccess('Задание сохранено, студенты видят изменения')
       onSaved?.(data)
       onClose()
     } catch (err) {
-      notifyError(err)
+      if (err?.response?.data?.code === 'MAX_SCORE_BELOW_GRADES') {
+        setMaxScoreError(describeError(err).message)
+      } else {
+        notifyError(err)
+      }
     } finally {
       setSaving(false)
     }
@@ -64,7 +69,7 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
 
   return (
     <>
-    <Dialog title={published ? 'Изменить задание' : 'Изменить черновик'} icon={Pencil} onClose={onClose} busy={saving} size="lg">
+    <Dialog title="Изменить задание" icon={Pencil} onClose={onClose} busy={saving} size="lg">
         <form onSubmit={save} className="mt-5 space-y-4">
           <div>
             <label htmlFor={`${titleId}-title`} className={labelClass}>Название</label>
@@ -97,12 +102,18 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
                 max={1000}
                 step={1}
                 value={form.maxScore}
-                onChange={update('maxScore')}
+                onChange={(event) => {
+                  setMaxScoreError('')
+                  update('maxScore')(event)
+                }}
                 placeholder="Без баллов"
+                aria-invalid={Boolean(maxScoreError)}
                 aria-describedby={`${titleId}-score-hint`}
-                className={`${inputClass} tabular-nums`}
+                className={`${inputClass} tabular-nums ${maxScoreError ? controlErrorClass : ''}`}
               />
-              <p id={`${titleId}-score-hint`} className={hintClass}>От 1 до 1000; пусто — задание без баллов.</p>
+              <p id={`${titleId}-score-hint`} className={maxScoreError ? errorTextClass : hintClass} role={maxScoreError ? 'alert' : undefined}>
+                {maxScoreError || 'От 1 до 1000; пусто — задание без баллов.'}
+              </p>
             </div>
             <label className="flex cursor-pointer items-start gap-2.5 self-start rounded-control border border-line-strong bg-surface px-3 py-2.5 text-sm text-fg sm:mt-7 has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-ring">
               <input
@@ -117,12 +128,10 @@ export default function AssignmentEditDialog({ assignment, onClose, onSaved }) {
               </span>
             </label>
           </div>
-          {published && (
-            <p className="flex items-start gap-2 rounded-control bg-primary-soft px-3 py-2 text-small text-primary-fg">
-              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              Студенты курса сразу увидят изменения; их статусы и сданные решения сохранятся.
-            </p>
-          )}
+          <p className="flex items-start gap-2 rounded-control bg-primary-soft px-3 py-2 text-small text-primary-fg">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            Студенты курса сразу увидят изменения; их статусы и сданные решения сохранятся.
+          </p>
           <DialogActions>
             <Button variant="outline" onClick={onClose} disabled={saving}>Отмена</Button>
             <Button type="submit" loading={saving} disabled={!form.title.trim()}>Сохранить</Button>

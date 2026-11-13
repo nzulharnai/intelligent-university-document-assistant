@@ -2,8 +2,6 @@ package com.university.docassistant.controller;
 
 import com.university.docassistant.dto.AssignmentDtos.AssignmentResponse;
 import com.university.docassistant.dto.AssignmentDtos.CreateAssignmentRequest;
-import com.university.docassistant.dto.AssignmentDtos.PublishRequest;
-import com.university.docassistant.dto.AssignmentDtos.PublishResponse;
 import com.university.docassistant.dto.AssignmentDtos.UpdateAssignmentRequest;
 import com.university.docassistant.dto.PageResponse;
 import com.university.docassistant.service.AssignmentService;
@@ -58,40 +56,11 @@ public class AssignmentController {
                 .body(assignmentService.create(courseId, request, principal.getUsername()));
     }
 
-    /** The course's AI drafts waiting for review; AccessControlService allows only its teacher and ADMIN. */
-    @GetMapping("/courses/{courseId}/assignments/drafts")
-    public PageResponse<AssignmentResponse> drafts(
-            @PathVariable Long courseId,
-            @PageableDefault(size = 20, sort = "deadline", direction = Sort.Direction.ASC) Pageable pageable,
-            @AuthenticationPrincipal UserDetails principal) {
-        return assignmentService.drafts(courseId, principal.getUsername(),
-                SortValidator.requireSortable(pageable, SORTABLE_FIELDS));
-    }
-
-    /** DRAFT -> ACTIVE and hand-out to the enrolled students; MANAGE_ASSIGNMENTS on the course. */
-    @PostMapping("/assignments/{id}/publish")
-    public AssignmentResponse publish(@PathVariable Long id, @AuthenticationPrincipal UserDetails principal) {
-        return assignmentService.publish(id, principal.getUsername());
-    }
-
-    /** Several drafts of the course, all or nothing (400 if any id is not a draft of it); MANAGE_ASSIGNMENTS. */
-    @PostMapping("/courses/{courseId}/assignments/publish")
-    public PublishResponse publishAll(@PathVariable Long courseId, @Valid @RequestBody PublishRequest request,
-                                      @AuthenticationPrincipal UserDetails principal) {
-        return assignmentService.publishAll(courseId, request.ids(), principal.getUsername());
-    }
-
-    /** Fixes title, requirements ("description") and deadline; DRAFT, ACTIVE or CLOSED. MANAGE_ASSIGNMENTS. */
+    /** Fixes title, requirements ("description"), deadline, late work and max score; ACTIVE or CLOSED. MANAGE_ASSIGNMENTS. */
     @PatchMapping("/assignments/{id}")
     public AssignmentResponse update(@PathVariable Long id, @Valid @RequestBody UpdateAssignmentRequest request,
                                      @AuthenticationPrincipal UserDetails principal) {
         return assignmentService.update(id, request, principal.getUsername());
-    }
-
-    /** "Это другое задание": clears the duplicate mark of an AI draft. MANAGE_ASSIGNMENTS on the course. */
-    @PostMapping("/assignments/{id}/not-duplicate")
-    public AssignmentResponse notDuplicate(@PathVariable Long id, @AuthenticationPrincipal UserDetails principal) {
-        return assignmentService.notDuplicate(id, principal.getUsername());
     }
 
     /** CLOSED -> ACTIVE; students who lack the task get it. MANAGE_ASSIGNMENTS on the course. */

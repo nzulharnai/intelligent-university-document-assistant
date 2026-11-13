@@ -86,6 +86,16 @@ public class Task {
     @Builder.Default
     private boolean late = false;
 
+    /**
+     * The assignment's deadline had already passed when the student enrolled (set by fanOut). Such a task is not
+     * overdue and gets no reminder; with allow_late the student may still hand in (marked late as usual). Only ever
+     * cleared afterwards: when the teacher moves the deadline to the enrollment time or later, or removes it.
+     */
+    @Column(name = "deadline_before_enrollment", nullable = false)
+    @ColumnDefault("false")
+    @Builder.Default
+    private boolean deadlineBeforeEnrollment = false;
+
     /** US-11: the teacher's grade, at most the assignment's max_score. */
     @Column(precision = 6, scale = 2)
     private BigDecimal score;

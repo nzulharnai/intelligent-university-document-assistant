@@ -1,5 +1,6 @@
 package com.university.docassistant.repository;
 
+import java.time.LocalDateTime;
 import com.university.docassistant.entity.Enrollment;
 import com.university.docassistant.entity.Enrollment.EnrollmentId;
 import com.university.docassistant.entity.User;
@@ -37,13 +38,18 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Enrollme
             countQuery = "SELECT COUNT(e) FROM Enrollment e WHERE e.id.courseId = :courseId")
     Page<User> findStudentsByCourseId(@Param("courseId") Long courseId, Pageable pageable);
 
-    /** Adds one enrollment without loading the course's other students; a repeat call is a no-op (returns 0). */
+    /**
+     * Adds one enrollment without loading the course's other students; a repeat call is a no-op (returns 0).
+     * {@code enrolledAt} comes from the shared Clock (app time zone), like deadlines, so fanOut can compare the two
+     * (tasks.deadline_before_enrollment); the database's now() would follow its own time zone.
+     */
     @Modifying
     @Query(value = """
-            INSERT INTO course_students (course_id, student_id, enrolled_at) VALUES (:courseId, :studentId, now())
+            INSERT INTO course_students (course_id, student_id, enrolled_at) VALUES (:courseId, :studentId, :enrolledAt)
             ON CONFLICT DO NOTHING
             """, nativeQuery = true)
-    int enroll(@Param("courseId") Long courseId, @Param("studentId") Long studentId);
+    int enroll(@Param("courseId") Long courseId, @Param("studentId") Long studentId,
+               @Param("enrolledAt") LocalDateTime enrolledAt);
 
     @Modifying
     @Query("DELETE FROM Enrollment e WHERE e.id.courseId = :courseId AND e.id.studentId = :studentId")

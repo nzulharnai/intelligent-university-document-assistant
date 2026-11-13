@@ -232,6 +232,8 @@ export default function AssignmentGradingPage() {
           key={grading.taskId}
           student={grading}
           maxScore={assignment.maxScore}
+          deadline={assignment.deadline}
+          assignmentStatus={assignment.status}
           onClose={() => setGradingId(null)}
           onSaved={saved}
           onNext={nextStudent ? () => setGradingId(nextStudent.taskId) : undefined}

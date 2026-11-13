@@ -45,7 +45,7 @@ class DocumentAnalysisServiceTest {
     }
 
     @Test
-    void partialAnalysisSavesItsDraftsAndRecordsThatItWasPartial() {
+    void partialAnalysisSavesItsAssignmentsAndRecordsThatItWasPartial() {
         List<TaskExtractDto> found = List.of(new TaskExtractDto("Lab 1", null, null));
         syllabusWith(new Analysis("Summary", List.of("Sorting"), found, true));
 

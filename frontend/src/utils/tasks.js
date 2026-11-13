@@ -45,9 +45,21 @@ export function plural(n, one, few, many) {
   return `${n} ${many}`
 }
 
+/**
+ * Why a student's task with nothing handed in is never overdue, like the server's OVERDUE rule: 'CLOSED' (the
+ * assignment takes no more work) or 'BEFORE_ENROLLMENT' (the deadline had passed when the student enrolled); null
+ * otherwise, and always for handed-in work.
+ */
+export function deadlineExcuse(task) {
+  if (isTaskFinished(task.status)) return null
+  if (task.assignmentStatus === 'CLOSED') return 'CLOSED'
+  if (task.deadlineBeforeEnrollment) return 'BEFORE_ENROLLMENT'
+  return null
+}
+
 /** Not handed in and the deadline has passed: highlighted in "Мои задачи". A browser-side hint, like the server's rule. */
 export const isOverdue = (task, now = Date.now()) =>
-  !isTaskFinished(task.status) && isPastDeadline(task.deadline, now)
+  !isTaskFinished(task.status) && !deadlineExcuse(task) && isPastDeadline(task.deadline, now)
 
 // Calendar days from the day of {@code now} to the day of {@code date}, both as local wall-clock days.
 const calendarDaysBetween = (now, date) => {
@@ -60,17 +72,19 @@ const calendarDaysBetween = (now, date) => {
 
 /**
  * Deadline tag with a relative hint: "Просрочено на 1 день" / "на 3 ч" (unless finished, see isTaskFinished),
- * "Сегодня до 23:59", "Завтра до 18:00", "Через 2 дня · <date>" within a week, otherwise the date; tone and icon are
+ * "Сегодня до 23:59", "Завтра до 18:00", "Через 2 дня · <date>" within a week, otherwise the date ({@code excused}:
+ * always the plain date, see deadlineExcuse); tone and icon are
  * the badge's look (see TONES). The backend sends local date-time without a zone, which Date parses as local time,
  * as intended; the time of day is shown as sent.
  */
-export function getDeadlineInfo(deadline, status, now = Date.now()) {
+export function getDeadlineInfo(deadline, status, now = Date.now(), excused = false) {
   if (!deadline) return { label: 'Без срока', ...TONES.none }
   const date = new Date(deadline)
   const formatted = formatDateTime(deadline)
   const time = String(deadline).slice(11, 16)
   const diff = date.getTime() - now
-  if (isTaskFinished(status)) return { label: formatted, ...TONES.later }
+  // Excused (see deadlineExcuse): the plain date, never "Просрочено".
+  if (isTaskFinished(status) || excused) return { label: formatted, ...TONES.later }
   if (diff < 0) {
     const days = Math.floor(-diff / DAY_MS)
     const late = days >= 1 ? plural(days, 'день', 'дня', 'дней') : `${Math.max(1, Math.floor(-diff / HOUR_MS))} ч`

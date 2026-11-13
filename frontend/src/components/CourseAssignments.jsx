@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Award, ClipboardList, Loader2, Lock, LockOpen, Pencil, Plus } from 'lucide-react'
+import { AlertTriangle, Award, ClipboardList, Loader2, Lock, LockOpen, Pencil, Plus } from 'lucide-react'
 import api, { describeError } from '../api/axios'
 import { useToast } from '../context/ToastContext'
 import useConfirm from '../hooks/useConfirm'
@@ -13,9 +13,10 @@ const PAGE_SIZE = 20
 const inputClass = 'w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-sm text-fg outline-none transition placeholder:text-fg-muted focus:border-primary focus:ring-4 focus:ring-ring'
 
 /**
- * The course's assignments (found by the AI in its documents or added by hand). Every enrolled student gets each one
- * as a task. With {@code canManage} (course teacher, ADMIN) assignments can be added, edited, closed, reopened and
- * deleted.
+ * The course's assignments (found by the AI in its documents - published at once, tagged "Найдено ИИ" with their
+ * source document - or added by hand). Every enrolled student gets each one as a task. With {@code canManage} (course
+ * teacher, ADMIN) assignments can be added, edited, closed, reopened and deleted, and documents the AI analyzed only
+ * in part are pointed out.
  */
 export default function CourseAssignments({ courseId, canManage, version = 0 }) {
   const { notifyError, showSuccess } = useToast()
@@ -134,6 +135,11 @@ export default function CourseAssignments({ courseId, canManage, version = 0 }) 
     }
   }
 
+  // Documents whose last AI analysis covered only part of the text: some of their assignments may be missing.
+  const partialSources = [...new Map((page?.content ?? [])
+    .filter((assignment) => assignment.sourceAnalysisPartial && assignment.sourceDocumentId)
+    .map((assignment) => [assignment.sourceDocumentId, assignment.sourceDocumentName ?? 'Документ'])).entries()]
+
   const actionClass = 'inline-flex shrink-0 items-center gap-1 self-start rounded-control border px-2 py-1 text-xs font-medium transition disabled:opacity-60'
   const manageActions = (assignment) => (
     <>
@@ -193,6 +199,24 @@ export default function CourseAssignments({ courseId, canManage, version = 0 }) 
             Заданий пока нет. ИИ находит их в загруженных силлабусах и заданиях{canManage ? ', или добавьте задание вручную' : ''}.
           </p>
         ) : (
+          <>
+          {canManage && partialSources.length > 0 && (
+            <div role="status" className="mb-3 flex gap-2 rounded-xl border border-warning/30 bg-warning-soft px-3 py-2.5 text-xs text-warning-fg">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-semibold">ИИ обработал документ не полностью — проверьте задания вручную</p>
+                <p className="mt-0.5">
+                  Часть текста осталась без ответа ИИ, поэтому некоторые задания могли не попасть в список:{' '}
+                  {partialSources.map(([id, name], index) => (
+                    <span key={id}>
+                      {index > 0 && ', '}
+                      <Link to={`/documents/${id}`} className="font-medium underline underline-offset-2">{name}</Link>
+                    </span>
+                  ))}
+                </p>
+              </div>
+            </div>
+          )}
           <ul className="space-y-2">
             {page.content.map((assignment) => (
               <TaskItem
@@ -206,6 +230,7 @@ export default function CourseAssignments({ courseId, canManage, version = 0 }) 
               />
             ))}
           </ul>
+          </>
         )}
         {page && !error && !page.last && (
           <button

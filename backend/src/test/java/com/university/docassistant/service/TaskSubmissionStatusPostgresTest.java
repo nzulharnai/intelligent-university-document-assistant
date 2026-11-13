@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * US-10 on real PostgreSQL: the startup migration of existing tasks to the submission lifecycle, and the queries
- * that keep it (markSubmitted, the student's conditional status change, late re-decided on a moved deadline, the
+ * that keep it (markSubmitted, the student's conditional status change, late only cleared by a moved deadline, the
  * upcoming list). Opt-in like the other *PostgresTest classes; only ever the separate doc_assistant_test database.
  */
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
@@ -78,7 +78,7 @@ class TaskSubmissionStatusPostgresTest {
         student = persist(User.builder().email("s@uni.kz").fullName("Student").role(Role.ROLE_STUDENT)
                 .createdAt(LocalDateTime.now()).build());
         course = persist(Course.builder().title("Algorithms").code("ALG").teacher(teacher).build());
-        enrollments.enroll(course.getId(), student.getId());
+        enrollments.enroll(course.getId(), student.getId(), LocalDateTime.now());
         lab = persist(Assignment.builder().title("Lab 1").deadline(DEADLINE).status(AssignmentStatus.ACTIVE)
                 .course(course).build());
         noDeadline = persist(Assignment.builder().title("Essay").status(AssignmentStatus.ACTIVE).course(course).build());
@@ -194,18 +194,48 @@ class TaskSubmissionStatusPostgresTest {
     }
 
     @Test
-    void movingTheDeadlineRedecidesLateness() {
+    void anExtensionClearsLateAndMovingItBackDoesNotSetItAgain() {
         Task task = task(lab, TaskStatus.PENDING);
         tasks.markSubmitted(task.getId(), DEADLINE.plusHours(3), true);
         assertRow(task, TaskStatus.SUBMITTED, DEADLINE.plusHours(3), true);
 
-        jdbc.update("UPDATE assignments SET deadline = ? WHERE id = ?", DEADLINE.plusDays(1), lab.getId());
-        tasks.syncWithAssignments(course.getId());
+        moveDeadline(DEADLINE.plusDays(1));
         assertRow(task, TaskStatus.SUBMITTED, DEADLINE.plusHours(3), false);   // The extension forgives it.
 
-        jdbc.update("UPDATE assignments SET deadline = ? WHERE id = ?", DEADLINE, lab.getId());
-        tasks.syncWithAssignments(course.getId());
+        moveDeadline(DEADLINE);
+        assertRow(task, TaskStatus.SUBMITTED, DEADLINE.plusHours(3), false);   // Forgiven stays forgiven.
+    }
+
+    @Test
+    void aShorterExtensionKeepsWorkStillAfterItLate() {
+        Task task = task(lab, TaskStatus.PENDING);
+        tasks.markSubmitted(task.getId(), DEADLINE.plusHours(3), true);
+
+        moveDeadline(DEADLINE.plusHours(1));
         assertRow(task, TaskStatus.SUBMITTED, DEADLINE.plusHours(3), true);
+    }
+
+    @Test
+    void movingTheDeadlineEarlierKeepsOnTimeWorkOnTime() {
+        Task task = task(lab, TaskStatus.PENDING);
+        tasks.markSubmitted(task.getId(), DEADLINE.minusDays(1), false);
+
+        moveDeadline(DEADLINE.minusDays(2));                                    // Now before the hand-in.
+        assertRow(task, TaskStatus.SUBMITTED, DEADLINE.minusDays(1), false);
+    }
+
+    @Test
+    void aHandInAfterTheEarlierDeadlineIsLate() {
+        Task task = task(lab, TaskStatus.PENDING);
+        LocalDateTime earlier = DEADLINE.minusDays(2);
+        moveDeadline(earlier);
+
+        // What SubmissionService does: the rules carry the task's current deadline.
+        LocalDateTime now = earlier.plusHours(1);
+        LocalDateTime deadline = tasks.findSubmitRulesById(task.getId()).orElseThrow().deadline();
+        assertThat(deadline).isEqualTo(earlier);
+        tasks.markSubmitted(task.getId(), now, SubmissionService.isLate(deadline, now));
+        assertRow(task, TaskStatus.SUBMITTED, now, true);
     }
 
     @Test
@@ -229,6 +259,13 @@ class TaskSubmissionStatusPostgresTest {
 
         assertThat(tasks.findUpcomingViews(student.getId(), DEADLINE.minusDays(1), PageRequest.of(0, 10)).getContent())
                 .extracting(TaskResponse::id).containsExactly(open.getId());
+    }
+
+    private void moveDeadline(LocalDateTime deadline) {
+        em.flush();
+        jdbc.update("UPDATE assignments SET deadline = ? WHERE id = ?", deadline, lab.getId());
+        tasks.syncWithAssignments(course.getId());
+        em.clear();
     }
 
     private void migrate() {
