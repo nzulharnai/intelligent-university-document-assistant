@@ -1,6 +1,6 @@
 # UniDocs Assistant
 
-[![CI](https://github.com/Nurasyldsdgs/intelligent-university-document-assistant/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Nurasyldsdgs/intelligent-university-document-assistant/actions/workflows/ci.yml)
+[![CI](https://github.com/nzulharnai/intelligent-university-document-assistant/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nzulharnai/intelligent-university-document-assistant/actions/workflows/ci.yml)
 
 Course document vault with AI classification, deadline extraction and Q&A.
 Backend: Spring Boot 3 (Java 21) + PostgreSQL. Frontend: React + Vite.
