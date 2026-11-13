@@ -2,6 +2,7 @@ package com.university.docassistant.service;
 
 import com.university.docassistant.config.AiProperties;
 import com.university.docassistant.config.PrivacyProperties;
+import com.university.docassistant.dto.AnswerAssignmentDto;
 import com.university.docassistant.dto.DocumentAnswerResponse;
 import com.university.docassistant.dto.SourceSnippetDto;
 import com.university.docassistant.entity.Document;
@@ -9,6 +10,8 @@ import com.university.docassistant.entity.Role;
 import com.university.docassistant.entity.User;
 import com.university.docassistant.exception.ApiException;
 import com.university.docassistant.exception.ErrorCodes;
+import com.university.docassistant.repository.AssignmentRepository;
+import com.university.docassistant.repository.AssignmentRepository.QnaAssignment;
 import com.university.docassistant.repository.DocumentChunkRepository;
 import com.university.docassistant.repository.DocumentChunkRepository.ChunkHit;
 import com.university.docassistant.security.AccessControlService;
@@ -19,12 +22,17 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -43,17 +51,23 @@ class DocumentQnaServiceTest {
     private final DocumentChunkRepository chunks = mock(DocumentChunkRepository.class);
     private final AccessControlService access = mock(AccessControlService.class);
     private final AiClientService ai = mock(AiClientService.class);
-    private final DocumentQnaService service = new DocumentQnaService(documentService, chunks, access, ai,
+    private final AssignmentRepository assignments = mock(AssignmentRepository.class);
+    private static final ZoneId ZONE = ZoneId.of("Asia/Almaty");
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 13, 12, 0);
+    private final DocumentQnaService service = new DocumentQnaService(documentService, chunks, assignments, access, ai,
             new AiProperties(true, "key", "m", "http://x", Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 1, 1, 2, 1),
-            new DocumentPrivacyService(new PrivacyProperties(null, null)));
+            new DocumentPrivacyService(new PrivacyProperties(null, null)),
+            Clock.fixed(NOW.atZone(ZONE).toInstant(), ZONE));
 
     private final Document document = Document.builder().id(7L).textSnippet("Силлабус").build();
     private final User student = User.builder().id(5L).email(EMAIL).role(Role.ROLE_STUDENT).build();
 
-    record Hit(Long documentId, String documentName, Integer chunkIndex, Integer startOffset, Integer endOffset,
-               String content, Double score) implements ChunkHit {
+    record Hit(Long documentId, String documentName, Long courseId, String courseTitle, Integer chunkIndex,
+               Integer startOffset, Integer endOffset, String content, Double score) implements ChunkHit {
         public Long getDocumentId() { return documentId; }
         public String getDocumentName() { return documentName; }
+        public Long getCourseId() { return courseId; }
+        public String getCourseTitle() { return courseTitle; }
         public Integer getChunkIndex() { return chunkIndex; }
         public Integer getStartOffset() { return startOffset; }
         public Integer getEndOffset() { return endOffset; }
@@ -62,9 +76,25 @@ class DocumentQnaServiceTest {
     }
 
     private static Hit hit(long documentId, int index, String content) {
-        return new Hit(documentId, "doc" + documentId + ".pdf", index, index * 850, index * 850 + content.length(),
-                content, 0.5);
+        return new Hit(documentId, "doc" + documentId + ".pdf", 3L, "Базы данных", index, index * 850,
+                index * 850 + content.length(), content, 0.5);
     }
+
+    record Task(Long id, Long courseId, String courseTitle, String title, LocalDateTime deadline, Integer maxScore,
+                Boolean allowLate, Double score) implements QnaAssignment {
+        public Long getId() { return id; }
+        public Long getCourseId() { return courseId; }
+        public String getCourseTitle() { return courseTitle; }
+        public String getTitle() { return title; }
+        public LocalDateTime getDeadline() { return deadline; }
+        public Integer getMaxScore() { return maxScore; }
+        public Boolean getAllowLate() { return allowLate; }
+        public Double getScore() { return score; }
+    }
+
+    private static final Task LAB2 = new Task(41L, 3L, "Базы данных", "Лабораторная работа 2",
+            LocalDateTime.of(2026, 12, 27, 23, 59), 10, false, 0.4);
+    private static final Task PROJECT = new Task(42L, 3L, "Базы данных", "Курсовой проект", null, null, true, 0.0);
 
     @BeforeEach
     void setUp() {
@@ -84,7 +114,8 @@ class DocumentQnaServiceTest {
         DocumentAnswerResponse response = service.askDocument(7L, QUESTION, EMAIL);
 
         assertThat(response.hasAnswer()).isTrue();
-        assertThat(response.sources()).containsExactly(new SourceSnippetDto(2, 7L, "doc7.pdf", 9, 7650,
+        assertThat(response.citedExplicitly()).isTrue();
+        assertThat(response.sources()).containsExactly(new SourceSnippetDto(2, 7L, "doc7.pdf", 3L, "Базы данных", 9, 7650,
                 7650 + "Лабораторная работа 1 сдаётся до 15 декабря.".length(),
                 "Лабораторная работа 1 сдаётся до 15 декабря."));
     }
@@ -113,7 +144,11 @@ class DocumentQnaServiceTest {
                 .thenReturn(List.of(hit(7, 0, "a"), hit(7, 1, "b")));
         when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Ответ без ссылок."));
 
-        assertThat(service.askDocument(7L, QUESTION, EMAIL).sources()).hasSize(2);
+        DocumentAnswerResponse response = service.askDocument(7L, QUESTION, EMAIL);
+
+        assertThat(response.sources()).hasSize(2);
+        assertThat(response.citedExplicitly()).isFalse();
+        assertThat(response.hasAnswer()).isTrue();
     }
 
     @Test
@@ -143,7 +178,7 @@ class DocumentQnaServiceTest {
 
         DocumentAnswerResponse response = service.askDocument(8L, QUESTION, EMAIL);
 
-        assertThat(response).isEqualTo(new DocumentAnswerResponse(DocumentQnaService.NO_TEXT_ANSWER, false, List.of()));
+        assertThat(response).isEqualTo(DocumentAnswerResponse.withoutSources(DocumentQnaService.NO_TEXT_ANSWER));
         verify(ai, never()).chat(anyString(), anyString());
     }
 
@@ -225,7 +260,7 @@ class DocumentQnaServiceTest {
 
         DocumentAnswerResponse response = service.askCourse(3L, QUESTION, EMAIL);
 
-        assertThat(response).isEqualTo(new DocumentAnswerResponse(DocumentQnaService.NO_ANSWER, false, List.of()));
+        assertThat(response).isEqualTo(DocumentAnswerResponse.withoutSources(DocumentQnaService.NO_ANSWER));
         verify(ai, never()).chat(anyString(), anyString());
     }
 
@@ -244,7 +279,7 @@ class DocumentQnaServiceTest {
         when(access.scope(student)).thenReturn(new Scope(false, List.of(), false));
 
         assertThat(service.askAll(QUESTION, EMAIL))
-                .isEqualTo(new DocumentAnswerResponse(DocumentQnaService.NO_ANSWER, false, List.of()));
+                .isEqualTo(DocumentAnswerResponse.withoutSources(DocumentQnaService.NO_ANSWER));
         verifyNoInteractions(chunks);
     }
 
@@ -253,6 +288,138 @@ class DocumentQnaServiceTest {
         assertThat(DocumentQnaService.toTsQuery("Что такое O(n log n)? & | ! 'x'"))
                 .contains("что | такое | log");
         assertThat(DocumentQnaService.toTsQuery("?! ...")).isEmpty();
+    }
+
+    @Test
+    void keepsNumbersOfAnyLengthButNotSingleLetters() {
+        assertThat(DocumentQnaService.toTsQuery("Когда сдавать лабораторную 2?"))
+                .contains("когда | сдавать | лабораторную | 2");
+        assertThat(DocumentQnaService.toTsQuery("Задача 7 и 12, вариант б")).contains("задача | 7 | 12 | вариант");
+        assertThat(DocumentQnaService.toTsQuery("а я б")).isEmpty();
+    }
+
+    @Test
+    void assignmentsBlockComesOnlyFromTheAllowedCourses() {
+        when(access.scope(student)).thenReturn(new Scope(false, List.of(3L, 4L), false));
+        when(chunks.searchInCourses(eq(List.of(3L, 4L)), eq(false), anyString(), anyInt()))
+                .thenReturn(List.of(hit(10, 0, "Лабораторная работа 2 сдаётся до 20 декабря.")));
+        when(assignments.findForQnaInCourses(eq(List.of(3L, 4L)), anyString(), any(), anyInt()))
+                .thenReturn(List.of(LAB2, PROJECT));
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of(
+                "Срок изменён: лабораторную 2 нужно сдать до 27.12.2026 23:59 [задание 1] (в документе — 20 декабря "
+                        + "[doc10.pdf, фрагмент 1])."));
+
+        DocumentAnswerResponse response = service.askAll("Когда сдавать лабораторную 2?", EMAIL);
+
+        verify(assignments).findForQnaInCourses(List.of(3L, 4L), "когда | сдавать | лабораторную | 2", NOW,
+                DocumentQnaService.CONTEXT_ASSIGNMENTS);
+        ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
+        verify(ai).chat(system.capture(), anyString());
+        assertThat(system.getValue())
+                .contains("Если дата в документе расходится с этим блоком, верна дата из блока", "[задание N]")
+                .endsWith("""
+                        [АКТУАЛЬНЫЕ ЗАДАНИЯ КУРСА]
+                        [Задание 1] Курс: Базы данных · Название: Лабораторная работа 2 · Срок: 27.12.2026 23:59 \
+                        · Максимальный балл: 10 · После срока: не принимается
+                        [Задание 2] Курс: Базы данных · Название: Курсовой проект · Срок: срок не указан \
+                        · Максимальный балл: не указан · После срока: принимается""");
+        assertThat(response.citedExplicitly()).isTrue();
+        assertThat(response.sources()).extracting(SourceSnippetDto::fragment).containsExactly(1);
+        assertThat(response.assignments()).containsExactly(new AnswerAssignmentDto(1, 41L, 3L, "Базы данных",
+                "Лабораторная работа 2", LocalDateTime.of(2026, 12, 27, 23, 59)));
+    }
+
+    @Test
+    void courseQuestionListsOnlyThatCoursesAssignments() {
+        when(access.scope(student)).thenReturn(new Scope(false, List.of(3L, 4L), false));
+        when(chunks.searchInCourses(eq(List.of(3L)), eq(false), anyString(), anyInt()))
+                .thenReturn(List.of(hit(10, 0, "a")));
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Ответ [1]"));
+
+        service.askCourse(3L, QUESTION, EMAIL);
+
+        verify(assignments).findForQnaInCourses(eq(List.of(3L)), anyString(), eq(NOW), anyInt());
+    }
+
+    @Test
+    void documentQuestionListsTheAssignmentsFoundInThatDocument() {
+        when(chunks.searchInDocument(eq(7L), anyString(), anyInt())).thenReturn(List.of(hit(7, 0, "a")));
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Ответ [1]"));
+
+        service.askDocument(7L, QUESTION, EMAIL);
+
+        verify(assignments).findForQnaInDocument(eq(7L), anyString(), eq(NOW), anyInt());
+        verify(assignments, never()).findForQnaInCourses(any(), anyString(), any(), anyInt());
+    }
+
+    @Test
+    void questionWithoutFragmentsStillGoesToTheAiWhenThereAreAssignments() {
+        when(access.scope(student)).thenReturn(new Scope(false, List.of(3L), false));
+        when(chunks.searchInCourses(any(), eq(false), anyString(), anyInt())).thenReturn(List.of());
+        when(assignments.findForQnaInCourses(eq(List.of(3L)), anyString(), any(), anyInt()))
+                .thenReturn(List.of(PROJECT));
+        when(ai.chat(anyString(), anyString()))
+                .thenReturn(Optional.of("Курсовой проект пока без срока [задание 1]."));
+
+        DocumentAnswerResponse response = service.askAll("Что с курсовым?", EMAIL);
+
+        ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
+        verify(ai).chat(system.capture(), anyString());
+        assertThat(system.getValue()).contains("Подходящих фрагментов документов не найдено.",
+                "[Задание 1] Курс: Базы данных · Название: Курсовой проект");
+        assertThat(response.hasAnswer()).isTrue();
+        assertThat(response.sources()).isEmpty();
+        assertThat(response.assignments()).extracting(AnswerAssignmentDto::assignmentId).containsExactly(42L);
+        assertThat(response.citedExplicitly()).isTrue();
+    }
+
+    @Test
+    void assignmentTitlesAreMaskedBeforeTheyReachTheAi() {
+        when(access.scope(student)).thenReturn(new Scope(false, List.of(3L), false));
+        when(assignments.findForQnaInCourses(any(), anyString(), any(), anyInt())).thenReturn(List.of(
+                new Task(43L, 3L, "Базы данных", "Отчёт Иванова 990101300013", null, null, true, 0.0)));
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Ответ [задание 1]"));
+
+        DocumentAnswerResponse response = service.askAll("Какие задания?", EMAIL);
+
+        ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
+        verify(ai).chat(system.capture(), anyString());
+        assertThat(system.getValue()).doesNotContain("990101300013").contains("Отчёт Иванова [ИИН скрыт]");
+        // The answer shows the title as the student sees it in their tasks.
+        assertThat(response.assignments()).extracting(AnswerAssignmentDto::title)
+                .containsExactly("Отчёт Иванова 990101300013");
+    }
+
+    @Test
+    void noFragmentsAndNoAssignmentsAnswersWithoutAi() {
+        when(access.scope(student)).thenReturn(new Scope(false, List.of(3L), false));
+
+        assertThat(service.askAll("Что с курсовым?", EMAIL))
+                .isEqualTo(DocumentAnswerResponse.withoutSources(DocumentQnaService.NO_ANSWER));
+        verify(ai, never()).chat(anyString(), anyString());
+    }
+
+    @Test
+    void answerCitingOnlyAnAssignmentHasNoFragmentSources() {
+        when(chunks.searchInDocument(eq(7L), anyString(), anyInt())).thenReturn(List.of(hit(7, 0, "a"), hit(7, 1, "b")));
+        when(assignments.findForQnaInDocument(eq(7L), anyString(), any(), anyInt())).thenReturn(List.of(LAB2));
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("До 27.12.2026 [Задание 1]."));
+
+        DocumentAnswerResponse response = service.askDocument(7L, QUESTION, EMAIL);
+
+        assertThat(response.citedExplicitly()).isTrue();
+        assertThat(response.sources()).isEmpty();
+        assertThat(response.assignments()).extracting(AnswerAssignmentDto::number).containsExactly(1);
+    }
+
+    @Test
+    void parsesAssignmentCitations() {
+        assertThat(DocumentQnaService.citedAssignments(
+                "a [задание 2] b [Задания 1, 3] c [doc.pdf, фрагмент 1; задание 4] d [задание 9] e [2] f [Задание 0]", 5))
+                .containsExactly(2, 1, 3, 4);
+        assertThat(DocumentQnaService.citedFragments("[задание 2] [doc.pdf, фрагмент 1; задание 4]", 5))
+                .containsExactly(1);
+        assertThat(DocumentQnaService.citedAssignments("[задание 99999999999]", 5)).isEmpty();
     }
 
     @Test

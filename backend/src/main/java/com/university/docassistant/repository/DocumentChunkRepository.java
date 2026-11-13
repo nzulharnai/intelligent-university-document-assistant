@@ -17,11 +17,18 @@ import java.util.List;
 @Repository
 public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Long> {
 
-    /** A retrieved chunk with its document; {@code score} is 0 for chunks taken without a text match. */
+    /**
+     * A retrieved chunk with its document and course (null for a legacy document without one); {@code score} is 0
+     * for chunks taken without a text match.
+     */
     interface ChunkHit {
         Long getDocumentId();
 
         String getDocumentName();
+
+        Long getCourseId();
+
+        String getCourseTitle();
 
         Integer getChunkIndex();
 
@@ -35,11 +42,13 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Lo
     }
 
     @Query(value = """
-            SELECT ch.document_id AS documentId, d.original_file_name AS documentName, ch.chunk_index AS chunkIndex,
+            SELECT ch.document_id AS documentId, d.original_file_name AS documentName, d.course_id AS courseId,
+                   c.title AS courseTitle, ch.chunk_index AS chunkIndex,
                    ch.start_offset AS startOffset, ch.end_offset AS endOffset, ch.content AS content,
                    CAST(ts_rank_cd(ch.text_tsv, q) AS double precision) AS score
             FROM document_chunks ch
                 JOIN documents d ON d.id = ch.document_id
+                LEFT JOIN courses c ON c.id = d.course_id
                 CROSS JOIN to_tsquery('russian', :query) q
             WHERE ch.document_id = :documentId AND ch.text_tsv @@ q
             ORDER BY score DESC, ch.chunk_index
@@ -51,10 +60,11 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Lo
 
     /** The opening chunks of a document: the fallback context when no chunk shares a word with the question. */
     @Query(value = """
-            SELECT ch.document_id AS documentId, d.original_file_name AS documentName, ch.chunk_index AS chunkIndex,
+            SELECT ch.document_id AS documentId, d.original_file_name AS documentName, d.course_id AS courseId,
+                   c.title AS courseTitle, ch.chunk_index AS chunkIndex,
                    ch.start_offset AS startOffset, ch.end_offset AS endOffset, ch.content AS content,
                    CAST(0 AS double precision) AS score
-            FROM document_chunks ch JOIN documents d ON d.id = ch.document_id
+            FROM document_chunks ch JOIN documents d ON d.id = ch.document_id LEFT JOIN courses c ON c.id = d.course_id
             WHERE ch.document_id = :documentId
             ORDER BY ch.chunk_index
             LIMIT :limit
@@ -68,11 +78,13 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Lo
      * only with {@code includeTeacherOnly}. {@code courseIds} must not be empty.
      */
     @Query(value = """
-            SELECT ch.document_id AS documentId, d.original_file_name AS documentName, ch.chunk_index AS chunkIndex,
+            SELECT ch.document_id AS documentId, d.original_file_name AS documentName, d.course_id AS courseId,
+                   c.title AS courseTitle, ch.chunk_index AS chunkIndex,
                    ch.start_offset AS startOffset, ch.end_offset AS endOffset, ch.content AS content,
                    CAST(ts_rank_cd(ch.text_tsv, q) AS double precision) AS score
             FROM document_chunks ch
                 JOIN documents d ON d.id = ch.document_id
+                LEFT JOIN courses c ON c.id = d.course_id
                 CROSS JOIN to_tsquery('russian', :query) q
             WHERE d.course_id IN (:courseIds)
               AND (:includeTeacherOnly OR """ + DocumentRepository.VISIBLE_TO_STUDENTS_SQL + """

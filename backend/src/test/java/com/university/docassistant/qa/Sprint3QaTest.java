@@ -198,8 +198,8 @@ class Sprint3QaTest {
     private final DocumentService documentService = new DocumentService(documents, taskRows, assignmentRows, access,
             storage, parser, analysis, ai, chunker, audit, classifier, executor, mock(BatchImportRepository.class),
             assignments, privacy);
-    private final DocumentQnaService qna = new DocumentQnaService(documentService, chunkRows, access, ai, AI_PROPERTIES,
-            privacy);
+    private final DocumentQnaService qna = new DocumentQnaService(documentService, chunkRows, assignmentRows, access, ai,
+            AI_PROPERTIES, privacy, java.time.Clock.systemUTC());
 
     // In-memory tables.
     private final TreeMap<Long, Document> documentTable = new TreeMap<>();
@@ -835,6 +835,8 @@ class Sprint3QaTest {
             hits.add(new ChunkHit() {
                 public Long getDocumentId() { return id; }
                 public String getDocumentName() { return document.getOriginalFileName(); }
+                public Long getCourseId() { return 1L; }
+                public String getCourseTitle() { return "Курс"; }
                 public Integer getChunkIndex() { return 0; }
                 public Integer getStartOffset() { return 0; }
                 public Integer getEndOffset() { return content.length(); }
