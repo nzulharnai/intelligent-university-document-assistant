@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, BadgeCheck, BookOpen, CircleAlert, FileUp, Files, FolderLock, GraduationCap, Hourglass, LockKeyhole, Mail, Plus, ShieldCheck, User } from 'lucide-react'
+import { ArrowRight, BadgeCheck, BookOpen, CircleAlert, FileUp, Files, FolderLock, GraduationCap, Hourglass, LockKeyhole, Mail, Plus, ShieldCheck, Sparkles, User } from 'lucide-react'
 import api, { describeError } from '../api/axios'
 import ErrorState from '../components/ErrorState'
 import Badge from '../components/ui/Badge'
@@ -98,9 +98,10 @@ export default function Dashboard() {
         </section>
 
         <h2 className="mt-10 text-small font-semibold uppercase tracking-wide text-fg-muted">Быстрые действия</h2>
-        <section className="mt-3 grid gap-4 sm:grid-cols-3">
+        <section className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <QuickAction to="/courses" icon={GraduationCap} title={isAdmin ? 'Все курсы' : 'Мои курсы'} description="Документы, задания и чат с ИИ" />
           <QuickAction to="/documents" icon={FolderLock} title="Хранилище" description={access.files} />
+          <QuickAction to="/assistant" icon={Sparkles} title="ИИ-ассистент" description="Вопросы по всем вашим курсам обычным языком" />
           {isStudent ? (
             <QuickAction to="/courses" icon={Plus} title="Записаться на курс" description="По ссылке-приглашению от преподавателя" />
           ) : isAdmin ? (

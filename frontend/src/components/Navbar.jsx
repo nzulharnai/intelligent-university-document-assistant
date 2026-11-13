@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Bell, Building2, CheckCheck, FileText, FolderLock, GraduationCap, LayoutDashboard, Loader2, LogOut, Menu, Moon, Sun, User, UserRound, X } from 'lucide-react'
+import { Bell, Building2, CheckCheck, FileText, FolderLock, GraduationCap, LayoutDashboard, Loader2, LogOut, Menu, Moon, Sparkles, Sun, User, UserRound, X } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: '/dashboard', label: 'Панель', icon: LayoutDashboard },
   { to: '/documents', label: 'Документы', icon: FolderLock },
   { to: '/courses', label: 'Курсы', icon: GraduationCap },
+  { to: '/assistant', label: 'ИИ-ассистент', icon: Sparkles },
   { to: '/admin', label: 'Деканат', icon: Building2, adminOnly: true },
 ]
 

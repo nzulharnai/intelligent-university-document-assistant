@@ -1,25 +1,35 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { AlertTriangle, Bot, ChevronDown, FileText, Loader2, Quote, RotateCw, SendHorizontal, Sparkles, User } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Bot, CalendarClock, ChevronDown, ClipboardList, FileText, GraduationCap, Info, Loader2, Quote, RotateCw, SendHorizontal, Sparkles, User } from 'lucide-react'
 import api, { describeError } from '../api/axios'
 import { useToast } from '../context/ToastContext'
 import useAiStatus from '../hooks/useAiStatus'
+import { formatDateTime } from '../utils/dates'
 
 const MAX_QUESTION_LENGTH = 1000 // DocumentQuestionRequest: @Size(max = 1000)
 // The backend waits for the model (read timeout 90 s); the default axios timeout of 15 s would cut it off.
 const ASK_TIMEOUT_MS = 120_000
 // [2], [2, 3], [Фрагмент 2] and the backend prompt's [file.pdf, фрагмент 2]; the lazy prefix keeps [1, 2] whole.
 const CITATION = /\[(?:[^[\]]{0,200}?,\s*)??(?:фрагмент\p{L}*\s*)?(\d+(?:\s*,\s*\d+)*)\]/giu
+// [задание 2], [Задания 1, 3] and [file.pdf, фрагмент 1; задание 2]: the backend's [АКТУАЛЬНЫЕ ЗАДАНИЯ КУРСА] numbers.
+const ASSIGNMENT_CITATION = /\[(?:[^[\]]{0,200}?[,;]\s*)??задани\p{L}*\s*(\d+(?:\s*,\s*\d+)*)\]/giu
 
 /**
- * Q&A chat over a document or a course (RAG). Answers cite fragments as [n]; clicking a citation or a source
- * card opens that fragment. History lives only while the page is open.
+ * Q&A chat over a document or a course (RAG). Answers cite fragments as [n] and the course's current assignments as
+ * [задание N]; clicking a citation opens that fragment or points at that assignment. History lives only while the
+ * component is mounted.
  *
- * @param endpoint   POST endpoint taking { question } and returning { answer, hasAnswer, sources }
- * @param showDocuments  show which document each source comes from (course chat)
+ * @param endpoint   POST endpoint taking { question } and returning { answer, hasAnswer, sources, assignments,
+ *                   citedExplicitly }
+ * @param courseId   optional; sent as { question, courseId } (POST /ai/ask: one course instead of all of them)
+ * @param showDocuments  show which document and course each source comes from (course and global chats)
  * @param disabledReason when set, the input is disabled and this text is shown instead
+ * @param sourceAction   optional (source) => element shown under an opened source, e.g. "Показать в тексте"
  */
-export default function AiChat({ endpoint, title, subtitle, placeholder, suggestions = [], showDocuments = false, disabledReason }) {
+export default function AiChat({
+  endpoint, courseId, title, subtitle, placeholder, suggestions = [], showDocuments = false, disabledReason,
+  sourceAction,
+}) {
   const aiAvailable = useAiStatus()
   const { notifyError } = useToast()
   const [messages, setMessages] = useState([])
@@ -39,7 +49,8 @@ export default function AiChat({ endpoint, title, subtitle, placeholder, suggest
   const send = async (trimmed, id) => {
     setLoading(true)
     try {
-      const { data } = await api.post(endpoint, { question: trimmed }, { timeout: ASK_TIMEOUT_MS })
+      const body = courseId == null ? { question: trimmed } : { question: trimmed, courseId }
+      const { data } = await api.post(endpoint, body, { timeout: ASK_TIMEOUT_MS })
       setMessages((current) => [...current, { id: id + 1, role: 'assistant', question: trimmed, ...data }])
       // A question put back into the input after a failure is answered now; clear it unless the user edited it.
       setQuestion((current) => (current.trim() === trimmed ? '' : current))
@@ -98,7 +109,7 @@ export default function AiChat({ endpoint, title, subtitle, placeholder, suggest
             ? <UserBubble key={message.id} text={message.text} />
             : message.role === 'error'
               ? <ErrorBubble key={message.id} text={message.text} onRetry={loading || blockedReason ? null : () => retry(message)} />
-              : <AnswerBubble key={message.id} message={message} showDocuments={showDocuments} />
+              : <AnswerBubble key={message.id} message={message} showDocuments={showDocuments} sourceAction={sourceAction} />
         ))}
         {loading && <ThinkingBubble />}
       </div>
@@ -243,12 +254,23 @@ function ErrorBubble({ text, onRetry }) {
   )
 }
 
-function AnswerBubble({ message, showDocuments }) {
+function AnswerBubble({ message, showDocuments, sourceAction }) {
   const [openFragment, setOpenFragment] = useState(null)
+  const [activeAssignment, setActiveAssignment] = useState(null)
+  const assignmentsRef = useRef(null)
   const sources = message.sources ?? []
+  const assignments = message.assignments ?? []
   const termPattern = questionTermPattern(message.question)
+  // An older answer (or a server before Sprint 5) has no flag: treat its sources as cited.
+  const allContext = message.citedExplicitly === false && sources.length > 0
 
   const toggle = (fragment) => setOpenFragment((current) => (current === fragment ? null : fragment))
+  const pointAt = (number) => {
+    setActiveAssignment(number)
+    const card = assignmentsRef.current?.querySelector(`[data-assignment="${number}"]`)
+    card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    card?.focus({ preventScroll: true })
+  }
 
   return (
     <div className="flex gap-2">
@@ -261,7 +283,7 @@ function AnswerBubble({ message, showDocuments }) {
         }`}
         >
           <p className="whitespace-pre-wrap break-words">
-            <AnswerText text={message.answer} sources={sources} onCite={toggle} />
+            <AnswerText text={message.answer} sources={sources} assignments={assignments} onCite={toggle} onCiteAssignment={pointAt} />
           </p>
         </div>
         {sources.length > 0 && (
@@ -269,6 +291,12 @@ function AnswerBubble({ message, showDocuments }) {
             <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
               <Quote className="h-3 w-3" /> Источники ({sources.length})
             </p>
+            {allContext && (
+              <p className="flex items-start gap-1.5 text-xs text-fg-muted">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                ИИ не указал конкретные фрагменты. Показаны все, по которым он отвечал.
+              </p>
+            )}
             {sources.map((source) => (
               <SourceCard
                 key={source.fragment}
@@ -277,7 +305,18 @@ function AnswerBubble({ message, showDocuments }) {
                 onToggle={() => toggle(source.fragment)}
                 showDocument={showDocuments}
                 termPattern={termPattern}
+                action={sourceAction}
               />
+            ))}
+          </div>
+        )}
+        {assignments.length > 0 && (
+          <div ref={assignmentsRef} className="mt-2 space-y-1.5">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
+              <ClipboardList className="h-3 w-3" aria-hidden="true" /> Задания курса ({assignments.length})
+            </p>
+            {assignments.map((assignment) => (
+              <AssignmentCard key={assignment.number} assignment={assignment} active={activeAssignment === assignment.number} />
             ))}
           </div>
         )}
@@ -286,27 +325,91 @@ function AnswerBubble({ message, showDocuments }) {
   )
 }
 
-// Renders "[1]" / "[2, 3]" in the answer as buttons that open the cited source.
-function AnswerText({ text, sources, onCite }) {
-  const known = new Set(sources.map((source) => source.fragment))
+// One assignment the answer cites as [задание N], with its current deadline from "Задания курса".
+function AssignmentCard({ assignment, active }) {
+  return (
+    <div
+      data-assignment={assignment.number}
+      tabIndex={-1}
+      className={`flex items-start gap-2.5 rounded-xl border px-3 py-2 outline-none transition focus-visible:ring-2 focus-visible:ring-primary ${
+        active ? 'border-primary bg-primary-soft' : 'border-line bg-surface'
+      }`}
+    >
+      <span className="mt-0.5 inline-flex h-5 shrink-0 items-center justify-center rounded-md bg-accent-soft px-1.5 text-[11px] font-bold text-accent-fg">
+        З{assignment.number}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block break-words text-xs font-semibold text-fg">{assignment.title}</span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-fg-muted">
+          {assignment.courseTitle && (
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <GraduationCap className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{assignment.courseTitle}</span>
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1">
+            <CalendarClock className="h-3 w-3 shrink-0" aria-hidden="true" />
+            {assignment.deadline ? `до ${formatDateTime(assignment.deadline)}` : 'Срок не указан'}
+          </span>
+        </span>
+        {assignment.courseId != null && (
+          <Link
+            to={`/courses/${assignment.courseId}#assignments`}
+            className="mt-1 inline-flex items-center gap-1 rounded-sm text-xs font-medium text-primary-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            К заданиям курса <ArrowRight className="h-3 w-3" aria-hidden="true" />
+          </Link>
+        )}
+      </span>
+    </div>
+  )
+}
+
+// Fragment and assignment citations in the order they appear; a match inside an earlier one is skipped.
+function citations(text) {
+  const found = [
+    ...[...text.matchAll(CITATION)].map((match) => ({ match, kind: 'fragment' })),
+    ...[...text.matchAll(ASSIGNMENT_CITATION)].map((match) => ({ match, kind: 'assignment' })),
+  ].sort((a, b) => a.match.index - b.match.index)
+  const result = []
+  let end = 0
+  for (const item of found) {
+    if (item.match.index < end) continue
+    result.push(item)
+    end = item.match.index + item.match[0].length
+  }
+  return result
+}
+
+const CITE_BUTTON = 'mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1 align-text-top text-[11px] font-bold not-italic transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
+
+// Renders "[1]" / "[2, 3]" as buttons that open the cited source, "[задание 2]" as buttons that point at the assignment.
+function AnswerText({ text, sources, assignments, onCite, onCiteAssignment }) {
+  const knownFragments = new Set(sources.map((source) => source.fragment))
+  const knownAssignments = new Set(assignments.map((assignment) => assignment.number))
   const parts = []
   let last = 0
-  for (const match of text.matchAll(CITATION)) {
+  for (const { match, kind } of citations(text)) {
     parts.push(text.slice(last, match.index))
     const numbers = match[1].split(',').map((value) => Number(value.trim()))
+    const assignment = kind === 'assignment'
+    const known = assignment ? knownAssignments : knownFragments
     parts.push(
       <span key={match.index} className="whitespace-nowrap">
         {numbers.map((number) => (known.has(number) ? (
           <button
             key={number}
             type="button"
-            onClick={() => onCite(number)}
-            className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-primary-soft px-1 align-text-top text-[11px] font-bold not-italic text-primary-fg transition hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            title={`Показать фрагмент ${number}`}
+            onClick={() => (assignment ? onCiteAssignment(number) : onCite(number))}
+            className={`${CITE_BUTTON} ${assignment
+              ? 'bg-accent-soft text-accent-fg hover:bg-accent/20'
+              : 'bg-primary-soft text-primary-fg hover:bg-primary/20'}`}
+            title={assignment ? `Показать задание ${number}` : `Показать фрагмент ${number}`}
+            aria-label={assignment ? `Задание ${number}` : `Фрагмент ${number}`}
           >
-            {number}
+            {assignment ? `З${number}` : number}
           </button>
-        ) : <Fragment key={number}>[{number}]</Fragment>))}
+        ) : <Fragment key={number}>{assignment ? `[задание ${number}]` : `[${number}]`}</Fragment>))}
       </span>,
     )
     last = match.index + match[0].length
@@ -348,7 +451,7 @@ function focusedPreview(text, pattern) {
   return `${start > 0 ? '…' : ''}${slice}${start + 160 < text.length ? '…' : ''}`
 }
 
-function SourceCard({ source, open, onToggle, showDocument, termPattern }) {
+function SourceCard({ source, open, onToggle, showDocument, termPattern, action }) {
   const quoteRef = useRef(null)
   const location = useLocation()
   const preview = focusedPreview(source.text, termPattern)
@@ -378,10 +481,17 @@ function SourceCard({ source, open, onToggle, showDocument, termPattern }) {
         </span>
         <span className="min-w-0 flex-1">
           {showDocument && (
-            <span className="mb-0.5 flex items-center gap-1 text-xs font-semibold text-fg">
-              <FileText className="h-3 w-3 shrink-0" />
-              <span className="truncate">{source.documentName}</span>
-              <span className="shrink-0 font-normal text-fg-muted">· ID {source.documentId}</span>
+            <span className="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+              <span className="inline-flex min-w-0 items-center gap-1 font-semibold text-fg">
+                <FileText className="h-3 w-3 shrink-0" aria-hidden="true" />
+                <span className="truncate">{source.documentName}</span>
+              </span>
+              {source.courseTitle && (
+                <span className="inline-flex min-w-0 items-center gap-1 text-fg-muted">
+                  <GraduationCap className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{source.courseTitle}</span>
+                </span>
+              )}
             </span>
           )}
           {!open && <span className="line-clamp-2 text-xs text-fg-muted">{highlight(preview, termPattern)}</span>}
@@ -405,6 +515,7 @@ function SourceCard({ source, open, onToggle, showDocument, termPattern }) {
               Открыть документ <FileText className="h-3 w-3" />
             </Link>
           )}
+          {action?.(source)}
         </div>
       )}
     </div>
