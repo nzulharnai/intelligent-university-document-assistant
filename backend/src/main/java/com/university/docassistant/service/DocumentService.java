@@ -753,11 +753,22 @@ public class DocumentService {
      */
     @Transactional(readOnly = true)
     public DocumentTextResponse text(Long id, String email) {
+        return text(id, email, false);
+    }
+
+    /**
+     * {@code maskedRequested}: the masked copy for any role, the text Q&A fragments are cut from, so a source's
+     * offsets point into it (US-15). Without it the course teacher and ADMIN get the original, as before. The access
+     * check and the file name do not depend on it.
+     */
+    @Transactional(readOnly = true)
+    public DocumentTextResponse text(Long id, String email, boolean maskedRequested) {
         User user = access.currentUser(email);
         Document document = access.authorizeDocument(user, id, Permission.VIEW_DOCUMENT);
-        boolean original = access.can(user, document, Permission.MANAGE_COURSE);
+        boolean manages = access.can(user, document, Permission.MANAGE_COURSE);
+        boolean original = manages && !maskedRequested;
         String text = original ? document.getExtractedText() : maskedText(document);
-        return new DocumentTextResponse(document.getId(), fileName(document.getOriginalFileName(), original),
+        return new DocumentTextResponse(document.getId(), fileName(document.getOriginalFileName(), manages),
                 text != null, document.isTextTruncated(), text, !original, document.getPiiCount());
     }
 

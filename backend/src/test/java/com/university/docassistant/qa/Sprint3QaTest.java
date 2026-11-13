@@ -372,6 +372,26 @@ class Sprint3QaTest {
         }
 
         @Test
+        @DisplayName("US-15: masked=true gives the teacher the masked copy, where Q&A fragment offsets point")
+        void maskedTextForTheTeacherMatchesTheFragmentOffsets() {
+            DocumentTextResponse forStudent = documentService.text(syllabus, STUDENT_EMAIL);
+            DocumentTextResponse maskedForTeacher = documentService.text(syllabus, TEACHER_EMAIL, true);
+
+            assertThat(maskedForTeacher.masked()).isTrue();
+            assertThat(maskedForTeacher.text()).isEqualTo(forStudent.text()).isNotEqualTo(SYLLABUS);
+            assertThat(maskedForTeacher.originalFileName()).isEqualTo("syllabus.txt");
+            assertThat(documentService.text(syllabus, TEACHER_EMAIL).text()).as("without the parameter").isEqualTo(SYLLABUS);
+            // The chunks were cut from exactly this text, so each fragment's offsets select its content.
+            String indexed = chunkTable.get(syllabus);
+            assertThat(indexed).isEqualTo(maskedForTeacher.text());
+            List<com.university.docassistant.service.DocumentChunker.Chunk> fragments =
+                    new com.university.docassistant.service.DocumentChunker().split(indexed);
+            assertThat(fragments).isNotEmpty().allSatisfy(fragment -> assertThat(
+                    maskedForTeacher.text().substring(fragment.startOffset(), fragment.endOffset()))
+                    .isEqualTo(fragment.content()));
+        }
+
+        @Test
         @DisplayName("search runs over the masked text, and its results show a student nothing personal")
         void noIinInSearch() {
             JdbcTemplate jdbc = mock(JdbcTemplate.class);

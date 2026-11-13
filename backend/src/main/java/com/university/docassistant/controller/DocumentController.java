@@ -140,8 +140,10 @@ public class DocumentController {
     }
 
     @GetMapping("/{id}/text")
-    public DocumentTextResponse text(@PathVariable Long id, @AuthenticationPrincipal UserDetails principal) {
-        return documentService.text(id, principal.getUsername());
+    public DocumentTextResponse text(@PathVariable Long id,
+                                     @RequestParam(value = "masked", defaultValue = "false") boolean masked,
+                                     @AuthenticationPrincipal UserDetails principal) {
+        return documentService.text(id, principal.getUsername(), masked);
     }
 
     /** Queues a (re-)analysis; the new tasks replace the document's previous ones once it finishes. */

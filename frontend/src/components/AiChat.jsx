@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, Bot, CalendarClock, ChevronDown, ClipboardList, FileText, GraduationCap, Info, Loader2, Quote, RotateCw, SendHorizontal, Sparkles, User } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Bot, CalendarClock, ChevronDown, ClipboardList, FileText, GraduationCap, Info, Loader2, Quote, RotateCw, SendHorizontal, Sparkles, TextSearch, User } from 'lucide-react'
 import api, { describeError } from '../api/axios'
 import { useToast } from '../context/ToastContext'
 import useAiStatus from '../hooks/useAiStatus'
 import { formatDateTime } from '../utils/dates'
+import { fragmentLink } from '../utils/fragments'
 
 const MAX_QUESTION_LENGTH = 1000 // DocumentQuestionRequest: @Size(max = 1000)
 // The backend waits for the model (read timeout 90 s); the default axios timeout of 15 s would cut it off.
@@ -507,13 +508,22 @@ function SourceCard({ source, open, onToggle, showDocument, termPattern, action 
             {highlight(source.text, termPattern)}
           </blockquote>
           {showDocument && (
-            <Link
-              to={`/documents/${source.documentId}`}
-              state={{ from: location.pathname }}
-              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary-fg hover:underline"
-            >
-              Открыть документ <FileText className="h-3 w-3" />
-            </Link>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+              <Link
+                to={fragmentLink(source)}
+                state={{ from: location.pathname, fragmentText: source.text }}
+                className="inline-flex items-center gap-1 rounded-sm text-xs font-medium text-primary-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                Показать в документе <TextSearch className="h-3 w-3" aria-hidden="true" />
+              </Link>
+              <Link
+                to={`/documents/${source.documentId}`}
+                state={{ from: location.pathname }}
+                className="inline-flex items-center gap-1 rounded-sm text-xs font-medium text-fg-secondary hover:text-primary-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                Открыть документ <FileText className="h-3 w-3" aria-hidden="true" />
+              </Link>
+            </div>
           )}
           {action?.(source)}
         </div>
