@@ -1,5 +1,165 @@
 # Changelog
 
+## Sprint 5 — Ask my courses, answer sources, course weeks
+
+US-14 Ask My Courses in Plain Language, US-15 Show Where an Answer Comes From, US-16 Course Sections by Week. Manual
+browser checks: [docs/sprint5-manual-test-checklist.md](docs/sprint5-manual-test-checklist.md). The acceptance cases
+QA-ASK-014, QA-SRC-015 and QA-WEEK-016 are `Sprint5QaPostgresTest`: the real services, access control, full-text
+search and chunking on PostgreSQL with real commits, a fixed clock, and the AI, mail and file storage mocked.
+
+### US-14 — Questions about the courses
+
+- **Numbers count in the search.** `toTsQuery` keeps numbers of any length ("лабораторная 2" now searches for "2");
+  other words still need two characters. Only letters and digits get through, so the expression stays safe.
+- **Current assignments in the prompt.** A new block `[АКТУАЛЬНЫЕ ЗАДАНИЯ КУРСА]` lists up to 30 ACTIVE assignments
+  of the courses already authorized for the question (a document question: the assignments found in that document):
+  course, title, deadline "ДД.ММ.ГГГГ ЧЧ:ММ" or "срок не указан", max score, whether late work is accepted. Titles
+  sharing words with the question come first, then the nearest upcoming deadlines. Titles are masked. The prompt
+  says a date in the block wins over a date in a document and that the answer must say the deadline was moved; the
+  answer cites assignments as `[задание N]`.
+- **The student's own tasks and the current date** (found when "какие у меня пропущенные задания?" got "нет
+  информации"):
+  - the prompt starts with "Сейчас: ДД.ММ.ГГГГ ЧЧ:ММ" from the shared `Clock`;
+  - for a STUDENT, `[МОИ ЗАДАЧИ]` lists up to 40 of their own tasks in the authorized courses, overdue first, then
+    the nearest deadline: course, title, deadline, state in words (не начато, в работе, сдано, сдано с опозданием,
+    оценено, просрочено, срок прошёл до записи, задание закрыто), score and max score. "Просрочено" is the same
+    `TaskRepository.OVERDUE` condition as the "Просрочено" filter of "Мои задачи"; the other states follow
+    TaskStateBadge. Titles are masked. Only the current user's tasks are read, after the access check;
+  - a TEACHER or ADMIN gets no such block; the prompt says personal tasks are for students, and the model then lists
+    the upcoming course deadlines;
+  - new rules: questions about one's tasks, overdue work and upcoming deadlines are answered from `[МОИ ЗАДАЧИ]` and
+    `[АКТУАЛЬНЫЕ ЗАДАНИЯ КУРСА]`, cited as `[задача N]` and `[задание N]`; "no overdue tasks" is an answer, and the
+    "нет информации" sentence is only for when no block holds the answer.
+- **The question goes to the AI** when at least one block is not empty: fragments, assignments or tasks.
+- **Duplicate fragments.** Fragments with the same text (a file uploaded twice) are kept once; three times as many
+  are fetched, so the next best fragment takes the freed place.
+- **Response.** `SourceSnippetDto` has `courseId` and `courseTitle`. `DocumentAnswerResponse` has `assignments`
+  (number, assignmentId, courseId, courseTitle, title, deadline) and `tasks` (number, taskId, courseId, courseTitle,
+  title, deadline, state) - only the cited ones - and `citedExplicitly` (the model cited a fragment, an assignment or
+  a task). When the model cites only an assignment or a task, `sources` are empty; when it cites nothing, they are the
+  whole context, as before.
+- **Unchanged:** authorization before retrieval, the masked question, the semaphore and the 503 codes.
+- **Frontend.**
+  - A page `/assistant` "ИИ-ассистент" for every role (navbar item, dashboard card): "Все мои курсы" or one course
+    (`AiChat` got an optional `courseId`, sent in the body); without courses an empty state with a link to "Курсы".
+  - Source cards show the course instead of "ID документа".
+  - "Задания курса" and "Мои задачи" cards under the sources; `[задание N]` and `[задача N]` in the text are buttons
+    like `[n]`; a task card links to "Мои задачи" on the dashboard (`/dashboard#my-tasks`).
+  - "ИИ не указал конкретные фрагменты. Показаны все, по которым он отвечал" when `citedExplicitly` is false.
+
+### US-15 — From an answer to its fragment
+
+- **`GET /documents/{id}/text?masked=true`** gives any role the masked copy, which is what Q&A fragments are cut from,
+  so a source's offsets point into it. Without the parameter nothing changes (the teacher and ADMIN get the
+  original); the access check is the same.
+- **"Показать в документе"** in a source card opens `/documents/{id}?tab=text&from=…&to=…` with the fragment's text in
+  the router state. The "Текст" tab then loads the masked copy, marks the range, scrolls to it and shows "Показан
+  фрагмент, на который сослался ИИ" with "Снять выделение". The teacher also gets an explanation of the copy and
+  "Показать оригинал". Placeholders of personal data stay highlighted inside the mark.
+- **Stale links.** When the text at the offsets is not the fragment's, the fragment is found by its text; when it is
+  not there, the text is shown without a mark and "Документ изменился, фрагмент не найден". `from` and `to` must be
+  whole numbers with 0 ≤ from < to, otherwise they are ignored.
+- **The document chat keeps its history.** It stays mounted while the document page is open (hidden on other tabs)
+  and its sources have "Показать в тексте". Picking a tab by hand drops `from` and `to` from the address.
+
+### US-16 — Course weeks
+
+- **Weeks.** A course has 15 weeks by default, 1..30. A week from the AI is only a hint: it moves nothing until the
+  course teacher or ADMIN accepts it, and a student never gets it. A document without a week is normal. Hints for
+  documents uploaded before this sprint are computed only when the teacher asks ("Предложить недели"), never at startup.
+- **The plan from a syllabus** (`CourseWeekPlanService`): after the analysis of a SYLLABUS, in the same background
+  thread, one `chatJson` per part of the masked text answers `{"weeks":[{"week":1,"topic":"..."}]}` (a long text is
+  split like `AiTaskExtractionService`). The prompt forbids inventing weeks, treats the text as data and keeps topics
+  in the document's language. Weeks outside 1..30, repeats and empty topics are dropped; topics the teacher edited are
+  never overwritten (an atomic `INSERT … ON CONFLICT … WHERE edited_by_teacher = false`). A plan with more weeks
+  raises the weeks count (at most 30). Then the course's documents without a week and without a hint get one, one by one.
+- **The hint for one document** (`WeekSuggestionService`), for LECTURE, ASSIGNMENT and OTHER with text and no week:
+  - without the AI: an explicit "Неделя N", "Week N" or "N апта" in the file name or the first 400 characters, N
+    within the weeks count, gives N with confidence 1; "Лекция N" is not a week;
+  - otherwise, with a plan and a configured AI: one `chatJson` with the plan, the masked file name, the AI summary and
+    topics and the first 1 500 characters of the masked text, answering `{"week": n | null, "confidence": 0..1}`.
+    Below 0.5 nothing is stored.
+
+  The hint is stored only while the document has no week, so a week set by hand always wins.
+- **Where it runs.** After classification and analysis in `DocumentProcessingService` (also after OCR), after an
+  analysis queued in `DocumentAnalysisService`, and in a job of its own (`weeksAsync`) for a document with a category
+  picked by hand that gets no other job. A failure is logged only: it never marks a document FAILED or holds up its
+  assignments, and the services never throw.
+- **Endpoints.** Changes need `MANAGE_COURSE`; reading is for the course's members.
+  - `GET /courses/{id}/weeks` returns `weeksCount`, the weeks with topic and document count, and the count without a
+    week; the teacher also gets every week and `pendingSuggestions`. A student gets only the weeks with documents
+    they can see, counted over those (`VISIBLE_TO_STUDENTS_SQL`), and no `pendingSuggestions`.
+  - `PUT /courses/{id}/weeks` `{weeksCount}`: below a week a document is in, 409 `WEEK_IN_USE`. Topics and hints past
+    the new count are removed.
+  - `PUT /courses/{id}/weeks/{week}` `{topic}`: sets or (blank) clears the topic and marks it `edited_by_teacher`.
+  - `PATCH /documents/{id}/week` `{"week": n | null}`: sets or clears the week and clears the hint; outside
+    1..weeksCount, 400 `WEEK_OUT_OF_RANGE`.
+  - `POST /documents/{id}/week/accept`: the hint becomes the week; without one, 409 `WEEK_NO_SUGGESTION`.
+  - `POST /courses/{id}/weeks/accept-all` returns `{accepted}`.
+  - `POST /courses/{id}/weeks/suggest`: 202 `{documents}`, the hints are computed in the background; 503
+    `AI_NOT_CONFIGURED` or `AI_QUEUE_FULL`.
+  - `GET /documents` takes `week` (a number or `none`) with `courseId`; anything else, 400 `WEEK_OUT_OF_RANGE`.
+    `DocumentResponse` has `weekNumber` and `suggestedWeek` (always null for a student).
+- **Audit.** `DOCUMENT_WEEK_SET` "Неделя документа" names the week and whether it was set by hand or an AI suggestion
+  was accepted (accept-all writes one record listing the documents); `COURSE_WEEKS_CHANGED` "Изменение недель курса"
+  for the weeks count and topics.
+- **Frontend.** "Документы курса" switches between "По неделям" and "Списком". "Списком" is the list as before;
+  "По неделям" is the default when the course has a plan or a document with a week.
+  - Collapsible sections "Неделя N · тема" with their document count, then "Без недели"; a section loads its
+    documents when opened. The document row is one component, used by both views.
+  - A student sees only the weeks with documents they can see and changes nothing. The teacher sees every week, empty
+    ones dimmed.
+  - For the teacher:
+    - a week select on each document ("Без недели" or 1..weeksCount);
+    - "ИИ предлагает: неделя N" with "Принять" and "Другая";
+    - "Принять все подсказки (N)", after a confirmation;
+    - "Предложить недели", then "ИИ подбирает недели для N документов" while the counters refresh every 4 s for up
+      to two minutes;
+    - the week's topic edited in its header (Enter saves, Escape cancels);
+    - "Настроить недели", with `WEEK_IN_USE` shown under the field;
+    - "Загрузите силлабус — ИИ составит план недель и предложит неделю для каждого документа" while the course has no
+      plan.
+
+    Sections and counters reload after an upload.
+
+### Database (applied automatically at startup, safe with existing data)
+
+| Change | How existing rows are handled |
+|---|---|
+| `courses.weeks_count` | NOT NULL with `DEFAULT 15`: every existing course gets 15 weeks |
+| `course_weeks` (course_id, week_number, topic ≤ 300, source_document_id, edited_by_teacher) | new table; unique (course_id, week_number); deleted with the course (`ON DELETE CASCADE`); `source_document_id` becomes null when the syllabus is deleted (`ON DELETE SET NULL`), the plan stays |
+| `documents.week_number`, `suggested_week`, `suggested_week_confidence` | nullable: every existing document is "Без недели" without a hint |
+| index `idx_documents_course_week` (course_id, week_number) | created by Hibernate |
+
+No startup migration is needed (`ddl-auto=update` adds all of it). Checked on a copy of a Sprint 4 database: the first
+start adds the columns, the table and the indexes; a second start changes nothing.
+
+### Error codes and audit actions
+
+- New error codes, each with a Russian text in `CODE_MESSAGES`: `WEEK_OUT_OF_RANGE`, `WEEK_IN_USE`,
+  `WEEK_NO_SUGGESTION`.
+- New audit actions, each with a Russian label in the admin log: `DOCUMENT_WEEK_SET`, `COURSE_WEEKS_CHANGED`.
+- All 86 error codes and all 34 audit actions have Russian texts.
+
+### Tests
+
+602 backend tests with PostgreSQL, 92 of them on PostgreSQL; without a database those 92 and the real-Tesseract smoke
+test are skipped. New for Sprint 5:
+- `Sprint5QaPostgresTest`, `DocumentQnaPostgresTest`, `CourseWeeksPostgresTest`;
+- `CourseWeekPlanServiceTest`, `WeekSuggestionServiceTest`, `CourseWeekServiceTest`;
+- new cases in `DocumentQnaServiceTest` and `Sprint3QaTest` (QA-SEC-009: `masked=true`).
+
+### Known limitations
+
+- A week hint is computed once per document. A document that already has a hint is not suggested again by
+  "Предложить недели", even after the plan changed; the teacher sets the week by hand.
+- A new syllabus plan replaces the topics of weeks it names and keeps the others; weeks it no longer names are not
+  removed.
+- `[МОИ ЗАДАЧИ]` of a question about one document lists the student's tasks of that document's course, not only of
+  that document.
+- `?week=` is accepted without `courseId` too; the week numbers then match across courses.
+- The UI of this sprint was checked by lint and build only, not in a browser; see the manual checklist.
+
 ## Sprint 4 — review fixes
 
 Fixes from the review of Sprint 4, on top of the section below, and one change the course teacher asked for. Manual

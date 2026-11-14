@@ -2,7 +2,8 @@
 
 [![CI](https://github.com/nzulharnai/intelligent-university-document-assistant/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nzulharnai/intelligent-university-document-assistant/actions/workflows/ci.yml)
 
-Course document vault with AI classification, deadline extraction and Q&A.
+Course document vault with AI classification, deadline extraction, Q&A over all of a user's courses with
+links to the cited fragments, and course documents organized by week.
 Backend: Spring Boot 3 (Java 21) + PostgreSQL. Frontend: React + Vite.
 
 ## Run locally
@@ -31,7 +32,8 @@ npm run dev
 ```
 
 Uploaded files are stored in `backend/uploads/` (set `UPLOAD_DIR` to change it); this folder is git-ignored.
-Without an AI key the app still works, just without classification, deadline extraction and Q&A.
+Without an AI key the app still works, just without classification, deadline extraction, Q&A and the AI week
+plan (an explicit "Неделя N" / "Week N" in a file name still gives a week hint).
 
 ## OCR (распознавание сканов)
 
@@ -82,7 +84,8 @@ npm run build
 ### Тесты на PostgreSQL
 
 `*PostgresTest` проверяют на настоящем PostgreSQL 16 native SQL: выдачу заданий (`fanOut`), синхронизацию задач,
-поиск по `text_tsv` (по `masked_text`), фильтры видимости для студентов и миграции схемы. Они запускаются только с
+поиск по `text_tsv` (по `masked_text`), фильтры видимости для студентов, выборку фрагментов, заданий и личных задач
+для ИИ-ассистента, недели курса и миграции схемы. Они запускаются только с
 `-Dit.db.url` и работают в **отдельной** базе `doc_assistant_test` в контейнере docker-compose.
 
 > **Никогда не указывайте `doc_assistant_db`.** Тесты создают схему заново и удаляют её после прогона
