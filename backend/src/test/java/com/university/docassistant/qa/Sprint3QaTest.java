@@ -198,7 +198,7 @@ class Sprint3QaTest {
     private final DocumentService documentService = new DocumentService(documents, taskRows, assignmentRows, access,
             storage, parser, analysis, ai, chunker, audit, classifier, executor, mock(BatchImportRepository.class),
             assignments, privacy);
-    private final DocumentQnaService qna = new DocumentQnaService(documentService, chunkRows, assignmentRows, access, ai,
+    private final DocumentQnaService qna = new DocumentQnaService(documentService, chunkRows, assignmentRows, taskRows, access, ai,
             AI_PROPERTIES, privacy, java.time.Clock.systemUTC());
 
     // In-memory tables.

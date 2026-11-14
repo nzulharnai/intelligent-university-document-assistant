@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, Bot, CalendarClock, ChevronDown, ClipboardList, FileText, GraduationCap, Info, Loader2, Quote, RotateCw, SendHorizontal, Sparkles, TextSearch, User } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Bot, CalendarClock, ChevronDown, ClipboardList, FileText, GraduationCap, Info, ListChecks, Loader2, Quote, RotateCw, SendHorizontal, Sparkles, TextSearch, User } from 'lucide-react'
 import api, { describeError } from '../api/axios'
 import { useToast } from '../context/ToastContext'
 import useAiStatus from '../hooks/useAiStatus'
@@ -14,6 +14,20 @@ const ASK_TIMEOUT_MS = 120_000
 const CITATION = /\[(?:[^[\]]{0,200}?,\s*)??(?:фрагмент\p{L}*\s*)?(\d+(?:\s*,\s*\d+)*)\]/giu
 // [задание 2], [Задания 1, 3] and [file.pdf, фрагмент 1; задание 2]: the backend's [АКТУАЛЬНЫЕ ЗАДАНИЯ КУРСА] numbers.
 const ASSIGNMENT_CITATION = /\[(?:[^[\]]{0,200}?[,;]\s*)??задани\p{L}*\s*(\d+(?:\s*,\s*\d+)*)\]/giu
+// [задача 1], [Задачи 1, 2]: the student's own tasks ([МОИ ЗАДАЧИ]).
+const TASK_CITATION = /\[(?:[^[\]]{0,200}?[,;]\s*)??задач\p{L}*\s*(\d+(?:\s*,\s*\d+)*)\]/giu
+// The states the backend names a task by, as "Мои задачи" shows them.
+const TASK_STATE_LABELS = {
+  OVERDUE: 'Просрочено',
+  NOT_STARTED: 'Не начато',
+  IN_PROGRESS: 'В работе',
+  SUBMITTED: 'Сдано',
+  LATE: 'Сдано с опозданием',
+  GRADED: 'Оценено',
+  COMPLETED: 'Выполнено',
+  BEFORE_ENROLLMENT: 'Срок прошёл до записи',
+  CLOSED: 'Задание закрыто',
+}
 
 /**
  * Q&A chat over a document or a course (RAG). Answers cite fragments as [n] and the course's current assignments as
@@ -258,9 +272,12 @@ function ErrorBubble({ text, onRetry }) {
 function AnswerBubble({ message, showDocuments, sourceAction }) {
   const [openFragment, setOpenFragment] = useState(null)
   const [activeAssignment, setActiveAssignment] = useState(null)
+  const [activeTask, setActiveTask] = useState(null)
   const assignmentsRef = useRef(null)
+  const tasksRef = useRef(null)
   const sources = message.sources ?? []
   const assignments = message.assignments ?? []
+  const tasks = message.tasks ?? []
   const termPattern = questionTermPattern(message.question)
   // An older answer (or a server before Sprint 5) has no flag: treat its sources as cited.
   const allContext = message.citedExplicitly === false && sources.length > 0
@@ -269,6 +286,12 @@ function AnswerBubble({ message, showDocuments, sourceAction }) {
   const pointAt = (number) => {
     setActiveAssignment(number)
     const card = assignmentsRef.current?.querySelector(`[data-assignment="${number}"]`)
+    card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    card?.focus({ preventScroll: true })
+  }
+  const pointAtTask = (number) => {
+    setActiveTask(number)
+    const card = tasksRef.current?.querySelector(`[data-task="${number}"]`)
     card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     card?.focus({ preventScroll: true })
   }
@@ -284,7 +307,15 @@ function AnswerBubble({ message, showDocuments, sourceAction }) {
         }`}
         >
           <p className="whitespace-pre-wrap break-words">
-            <AnswerText text={message.answer} sources={sources} assignments={assignments} onCite={toggle} onCiteAssignment={pointAt} />
+            <AnswerText
+              text={message.answer}
+              sources={sources}
+              assignments={assignments}
+              tasks={tasks}
+              onCite={toggle}
+              onCiteAssignment={pointAt}
+              onCiteTask={pointAtTask}
+            />
           </p>
         </div>
         {sources.length > 0 && (
@@ -321,7 +352,59 @@ function AnswerBubble({ message, showDocuments, sourceAction }) {
             ))}
           </div>
         )}
+        {tasks.length > 0 && (
+          <div ref={tasksRef} className="mt-2 space-y-1.5">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
+              <ListChecks className="h-3 w-3" aria-hidden="true" /> Мои задачи ({tasks.length})
+            </p>
+            {tasks.map((task) => (
+              <TaskCard key={task.number} task={task} active={activeTask === task.number} />
+            ))}
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+// One of the student's own tasks the answer cites as [задача N]; the link opens "Мои задачи" on the dashboard.
+function TaskCard({ task, active }) {
+  const overdue = task.state === 'OVERDUE'
+  return (
+    <div
+      data-task={task.number}
+      tabIndex={-1}
+      className={`flex items-start gap-2.5 rounded-xl border px-3 py-2 outline-none transition focus-visible:ring-2 focus-visible:ring-primary ${
+        active ? 'border-primary bg-primary-soft' : overdue ? 'border-danger/40 bg-surface' : 'border-line bg-surface'
+      }`}
+    >
+      <span className="mt-0.5 inline-flex h-5 shrink-0 items-center justify-center rounded-md bg-success-soft px-1.5 text-[11px] font-bold text-success-fg">
+        Т{task.number}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block break-words text-xs font-semibold text-fg">{task.title}</span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-fg-muted">
+          <span className={`font-medium ${overdue ? 'text-danger-fg' : 'text-fg-secondary'}`}>
+            {TASK_STATE_LABELS[task.state] ?? task.state}
+          </span>
+          {task.courseTitle && (
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <GraduationCap className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{task.courseTitle}</span>
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1">
+            <CalendarClock className="h-3 w-3 shrink-0" aria-hidden="true" />
+            {task.deadline ? `до ${formatDateTime(task.deadline)}` : 'Срок не указан'}
+          </span>
+        </span>
+        <Link
+          to="/dashboard#my-tasks"
+          className="mt-1 inline-flex items-center gap-1 rounded-sm text-xs font-medium text-primary-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          К моим задачам <ArrowRight className="h-3 w-3" aria-hidden="true" />
+        </Link>
+      </span>
     </div>
   )
 }
@@ -371,6 +454,7 @@ function citations(text) {
   const found = [
     ...[...text.matchAll(CITATION)].map((match) => ({ match, kind: 'fragment' })),
     ...[...text.matchAll(ASSIGNMENT_CITATION)].map((match) => ({ match, kind: 'assignment' })),
+    ...[...text.matchAll(TASK_CITATION)].map((match) => ({ match, kind: 'task' })),
   ].sort((a, b) => a.match.index - b.match.index)
   const result = []
   let end = 0
@@ -385,32 +469,35 @@ function citations(text) {
 const CITE_BUTTON = 'mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1 align-text-top text-[11px] font-bold not-italic transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
 
 // Renders "[1]" / "[2, 3]" as buttons that open the cited source, "[задание 2]" as buttons that point at the assignment.
-function AnswerText({ text, sources, assignments, onCite, onCiteAssignment }) {
+function AnswerText({ text, sources, assignments, tasks, onCite, onCiteAssignment, onCiteTask }) {
   const knownFragments = new Set(sources.map((source) => source.fragment))
   const knownAssignments = new Set(assignments.map((assignment) => assignment.number))
+  const knownTasks = new Set(tasks.map((task) => task.number))
+  const KINDS = {
+    fragment: { known: knownFragments, onClick: onCite, label: (n) => `Фрагмент ${n}`, text: (n) => n, plain: (n) => `[${n}]`, tone: 'bg-primary-soft text-primary-fg hover:bg-primary/20' },
+    assignment: { known: knownAssignments, onClick: onCiteAssignment, label: (n) => `Задание ${n}`, text: (n) => `З${n}`, plain: (n) => `[задание ${n}]`, tone: 'bg-accent-soft text-accent-fg hover:bg-accent/20' },
+    task: { known: knownTasks, onClick: onCiteTask, label: (n) => `Моя задача ${n}`, text: (n) => `Т${n}`, plain: (n) => `[задача ${n}]`, tone: 'bg-success-soft text-success-fg hover:bg-success/20' },
+  }
   const parts = []
   let last = 0
   for (const { match, kind } of citations(text)) {
     parts.push(text.slice(last, match.index))
     const numbers = match[1].split(',').map((value) => Number(value.trim()))
-    const assignment = kind === 'assignment'
-    const known = assignment ? knownAssignments : knownFragments
+    const style = KINDS[kind]
     parts.push(
       <span key={match.index} className="whitespace-nowrap">
-        {numbers.map((number) => (known.has(number) ? (
+        {numbers.map((number) => (style.known.has(number) ? (
           <button
             key={number}
             type="button"
-            onClick={() => (assignment ? onCiteAssignment(number) : onCite(number))}
-            className={`${CITE_BUTTON} ${assignment
-              ? 'bg-accent-soft text-accent-fg hover:bg-accent/20'
-              : 'bg-primary-soft text-primary-fg hover:bg-primary/20'}`}
-            title={assignment ? `Показать задание ${number}` : `Показать фрагмент ${number}`}
-            aria-label={assignment ? `Задание ${number}` : `Фрагмент ${number}`}
+            onClick={() => style.onClick(number)}
+            className={`${CITE_BUTTON} ${style.tone}`}
+            title={`Показать: ${style.label(number).toLowerCase()}`}
+            aria-label={style.label(number)}
           >
-            {assignment ? `З${number}` : number}
+            {style.text(number)}
           </button>
-        ) : <Fragment key={number}>{assignment ? `[задание ${number}]` : `[${number}]`}</Fragment>))}
+        ) : <Fragment key={number}>{style.plain(number)}</Fragment>))}
       </span>,
     )
     last = match.index + match[0].length

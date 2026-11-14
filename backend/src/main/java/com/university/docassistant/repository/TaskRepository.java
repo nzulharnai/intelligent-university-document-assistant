@@ -107,6 +107,35 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
             FROM Task t LEFT JOIN t.assignment a WHERE t.user.id = :userId AND """ + ENROLLED)
     TaskSummary summarizeMine(@Param("userId") Long userId, @Param("now") LocalDateTime now);
 
+    /**
+     * A student's own task as the Q&A prompt lists it ([МОИ ЗАДАЧИ]). {@code overdue} is the {@link #OVERDUE} condition
+     * of "Мои задачи" at :now, so the AI and the list never disagree.
+     */
+    record QnaTask(Long id, String title, LocalDateTime deadline, TaskStatus status, Long courseId, String courseTitle,
+                   AssignmentStatus assignmentStatus, boolean late, BigDecimal score, Integer maxScore,
+                   boolean deadlineBeforeEnrollment, boolean overdue) {
+    }
+
+    /**
+     * The user's own tasks in {@code courseIds} (taken from the access check of the question), still enrolled: overdue
+     * first, then the nearest upcoming deadline, then those without one, then past ones. The page sets the limit.
+     */
+    @Query("""
+            SELECT new com.university.docassistant.repository.TaskRepository$QnaTask(
+                t.id, t.title, t.deadline, t.status, c.id, c.title, a.status, t.late, t.score, a.maxScore,
+                t.deadlineBeforeEnrollment, CASE WHEN """ + OVERDUE + """
+                 THEN true ELSE false END)
+            FROM Task t JOIN t.course c LEFT JOIN t.assignment a
+            WHERE t.user.id = :userId AND c.id IN :courseIds AND """ + ENROLLED + """
+            ORDER BY CASE WHEN """ + OVERDUE + """
+                 THEN 0 ELSE 1 END,
+                     CASE WHEN t.deadline >= :now THEN 0 WHEN t.deadline IS NULL THEN 1 ELSE 2 END,
+                     CASE WHEN t.deadline >= :now THEN t.deadline END ASC,
+                     t.deadline DESC, t.id
+            """)
+    List<QnaTask> findForQna(@Param("userId") Long userId, @Param("courseIds") Collection<Long> courseIds,
+                             @Param("now") LocalDateTime now, Pageable limit);
+
     /** JPQL condition on Task t: the student still has to do it (not completed, submitted or graded). */
     String UNFINISHED = """
             t.status NOT IN (com.university.docassistant.entity.TaskStatus.COMPLETED,

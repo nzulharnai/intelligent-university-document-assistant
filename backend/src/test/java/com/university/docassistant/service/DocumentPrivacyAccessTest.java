@@ -242,7 +242,8 @@ class DocumentPrivacyAccessTest {
             AiClientService ai = mock(AiClientService.class);
             DocumentService viewable = mock(DocumentService.class);
             DocumentQnaService qna = new DocumentQnaService(viewable, chunks,
-                    mock(com.university.docassistant.repository.AssignmentRepository.class), access, ai,
+                    mock(com.university.docassistant.repository.AssignmentRepository.class),
+                    mock(com.university.docassistant.repository.TaskRepository.class), access, ai,
                     new AiProperties(true, "k", "m", "http://x", Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 1, 1, 2, 1),
                     privacy, java.time.Clock.systemUTC());
             document.setTextSnippet(DocumentParserService.snippet(document.getMaskedText()));
@@ -309,7 +310,8 @@ class DocumentPrivacyAccessTest {
             AiClientService ai = mock(AiClientService.class);
             DocumentService viewable = mock(DocumentService.class);
             DocumentQnaService qna = new DocumentQnaService(viewable, chunks,
-                    mock(com.university.docassistant.repository.AssignmentRepository.class), access, ai,
+                    mock(com.university.docassistant.repository.AssignmentRepository.class),
+                    mock(com.university.docassistant.repository.TaskRepository.class), access, ai,
                     new AiProperties(true, "k", "m", "http://x", Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 1, 1, 2, 1),
                     privacy, java.time.Clock.systemUTC());
             when(viewable.getViewable(eq(50L), anyString())).thenReturn(document);

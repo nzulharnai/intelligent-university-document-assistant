@@ -3,6 +3,10 @@ package com.university.docassistant.service;
 import com.university.docassistant.config.AiProperties;
 import com.university.docassistant.config.PrivacyProperties;
 import com.university.docassistant.dto.AnswerAssignmentDto;
+import com.university.docassistant.dto.AnswerTaskDto;
+import com.university.docassistant.entity.AssignmentStatus;
+import com.university.docassistant.entity.TaskStatus;
+import com.university.docassistant.repository.TaskRepository.QnaTask;
 import com.university.docassistant.dto.DocumentAnswerResponse;
 import com.university.docassistant.dto.SourceSnippetDto;
 import com.university.docassistant.entity.Document;
@@ -13,6 +17,7 @@ import com.university.docassistant.exception.ErrorCodes;
 import com.university.docassistant.repository.AssignmentRepository;
 import com.university.docassistant.repository.AssignmentRepository.QnaAssignment;
 import com.university.docassistant.repository.DocumentChunkRepository;
+import com.university.docassistant.repository.TaskRepository;
 import com.university.docassistant.repository.DocumentChunkRepository.ChunkHit;
 import com.university.docassistant.security.AccessControlService;
 import com.university.docassistant.security.AccessControlService.Scope;
@@ -22,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -34,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -52,9 +59,10 @@ class DocumentQnaServiceTest {
     private final AccessControlService access = mock(AccessControlService.class);
     private final AiClientService ai = mock(AiClientService.class);
     private final AssignmentRepository assignments = mock(AssignmentRepository.class);
+    private final TaskRepository tasks = mock(TaskRepository.class);
     private static final ZoneId ZONE = ZoneId.of("Asia/Almaty");
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 13, 12, 0);
-    private final DocumentQnaService service = new DocumentQnaService(documentService, chunks, assignments, access, ai,
+    private final DocumentQnaService service = new DocumentQnaService(documentService, chunks, assignments, tasks, access, ai,
             new AiProperties(true, "key", "m", "http://x", Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 1, 1, 2, 1),
             new DocumentPrivacyService(new PrivacyProperties(null, null)),
             Clock.fixed(NOW.atZone(ZONE).toInstant(), ZONE));
@@ -429,5 +437,149 @@ class DocumentQnaServiceTest {
         assertThat(DocumentQnaService.citedFragments(
                 "[Practice 04.pdf, фрагмент 2] и [Lab-3.docx, Фрагменты 1, 3] и [Syllabus 2026.pdf]", 5))
                 .containsExactly(2, 1, 3);
+    }
+    // --- Own tasks, the date, duplicates ---------------------------------------------------------------------------
+
+    private static final QnaTask OVERDUE_LAB = new QnaTask(61L, "Лабораторная работа 3", NOW.minusDays(2),
+            TaskStatus.PENDING, 3L, "Базы данных", AssignmentStatus.ACTIVE, false, null, 10, false, true);
+    private static final QnaTask HANDED_IN = new QnaTask(62L, "Эссе", NOW.minusDays(1), TaskStatus.SUBMITTED, 3L,
+            "Базы данных", AssignmentStatus.ACTIVE, true, null, null, false, false);
+    private static final QnaTask GRADED = new QnaTask(63L, "Тест 1", NOW.minusDays(9), TaskStatus.GRADED, 3L,
+            "Базы данных", AssignmentStatus.ACTIVE, false, new BigDecimal("8.50"), 10, false, false);
+
+    private String systemPromptSent() {
+        ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
+        verify(ai).chat(system.capture(), anyString());
+        return system.getValue();
+    }
+
+    @Test
+    void aStudentsOwnTasksGoIntoThePromptWithTheirStates() {
+        when(access.scope(student)).thenReturn(new Scope(false, List.of(3L, 4L), false));
+        when(tasks.findForQna(eq(5L), eq(List.of(3L, 4L)), eq(NOW), any()))
+                .thenReturn(List.of(OVERDUE_LAB, HANDED_IN, GRADED));
+        when(ai.chat(anyString(), anyString()))
+                .thenReturn(Optional.of("Просрочена лабораторная работа 3 [задача 1]; эссе сдано [задача 2]."));
+
+        DocumentAnswerResponse response = service.askAll("Какие у меня пропущенные задания или дедлайны?", EMAIL);
+
+        assertThat(systemPromptSent())
+                .contains("Сейчас: 13.11.2026 12:00. Пользователь — студент",
+                        "Если просроченных задач нет, прямо так и скажи", "[задача N]")
+                .endsWith("""
+                        [МОИ ЗАДАЧИ]
+                        [Задача 1] Курс: Базы данных · Название: Лабораторная работа 3 · Срок: 11.11.2026 12:00 \
+                        · Состояние: просрочено · Максимальный балл: 10
+                        [Задача 2] Курс: Базы данных · Название: Эссе · Срок: 12.11.2026 12:00 \
+                        · Состояние: сдано с опозданием
+                        [Задача 3] Курс: Базы данных · Название: Тест 1 · Срок: 04.11.2026 12:00 \
+                        · Состояние: оценено · Балл: 8.5 из 10""");
+        assertThat(response.hasAnswer()).isTrue();
+        assertThat(response.citedExplicitly()).isTrue();
+        assertThat(response.tasks()).containsExactly(
+                new AnswerTaskDto(1, 61L, 3L, "Базы данных", "Лабораторная работа 3", NOW.minusDays(2), "OVERDUE"),
+                new AnswerTaskDto(2, 62L, 3L, "Базы данных", "Эссе", NOW.minusDays(1), "LATE"));
+    }
+
+    @Test
+    void tasksAreOnlyTheCurrentStudentsAndOnlyOfTheAskedCourse() {
+        when(access.scope(student)).thenReturn(new Scope(false, List.of(3L, 4L), false));
+        when(tasks.findForQna(anyLong(), any(), any(), any())).thenReturn(List.of(OVERDUE_LAB));
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Ответ [задача 1]"));
+
+        service.askCourse(3L, "Что я пропустил?", EMAIL);
+
+        verify(tasks).findForQna(eq(5L), eq(List.of(3L)), eq(NOW), any());
+        verify(tasks, never()).findForQna(org.mockito.ArgumentMatchers.longThat(id -> id != 5L), any(), any(), any());
+    }
+
+    @Test
+    void aQuestionWithOnlyTasksStillGoesToTheAi() {
+        when(access.scope(student)).thenReturn(new Scope(false, List.of(3L), false));
+        when(tasks.findForQna(eq(5L), eq(List.of(3L)), any(), any())).thenReturn(List.of(HANDED_IN));
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Просроченных задач нет [задача 1]."));
+
+        DocumentAnswerResponse response = service.askAll("Есть ли у меня просрочки?", EMAIL);
+
+        assertThat(systemPromptSent()).contains("Подходящих фрагментов документов не найдено.", "[МОИ ЗАДАЧИ]");
+        assertThat(response.tasks()).extracting(AnswerTaskDto::state).containsExactly("LATE");
+    }
+
+    @Test
+    void teachersHaveNoTasksBlock() {
+        User teacher = User.builder().id(6L).email(EMAIL).role(Role.ROLE_TEACHER).build();
+        when(access.currentUser(EMAIL)).thenReturn(teacher);
+        when(access.scope(teacher)).thenReturn(new Scope(false, List.of(3L), true));
+        when(assignments.findForQnaInCourses(any(), anyString(), any(), anyInt())).thenReturn(List.of(LAB2));
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of(
+                "Личные задачи есть только у студентов. Ближайший дедлайн — 27.12.2026 [задание 1]."));
+
+        service.askAll("Какие у меня пропущенные задания?", EMAIL);
+
+        assertThat(systemPromptSent()).contains("Пользователь — преподаватель или деканат: личных задач у него нет",
+                "личные задачи есть только у студентов").doesNotContain("[МОИ ЗАДАЧИ]\n");
+        verify(tasks, never()).findForQna(anyLong(), any(), any(), any());
+    }
+
+    @Test
+    void theCurrentMomentComesFromTheSharedClock() {
+        when(chunks.searchInDocument(eq(7L), anyString(), anyInt())).thenReturn(List.of(hit(7, 0, "a")));
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Ответ [1]"));
+
+        service.askDocument(7L, QUESTION, EMAIL);
+
+        assertThat(systemPromptSent()).contains("Сейчас: 13.11.2026 12:00.");
+    }
+
+    @Test
+    void fragmentsWithTheSameTextAreKeptOnceAndTheNextOneTakesTheirPlace() {
+        when(access.scope(student)).thenReturn(new Scope(false, List.of(3L), false));
+        List<ChunkHit> ranked = new java.util.ArrayList<>();
+        ranked.add(hit(10, 0, "Экзамен 20 декабря."));
+        ranked.add(hit(11, 0, "Экзамен  20 декабря.\n")); // the same file uploaded again
+        for (int i = 1; i <= 8; i++) {
+            ranked.add(hit(12, i, "Фрагмент " + i));
+        }
+        when(chunks.searchInCourses(eq(List.of(3L)), eq(false), anyString(), anyInt())).thenReturn(ranked);
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Ответ без ссылок."));
+
+        DocumentAnswerResponse response = service.askAll("Когда экзамен?", EMAIL);
+
+        verify(chunks).searchInCourses(eq(List.of(3L)), eq(false), anyString(), eq(DocumentQnaService.COURSE_CONTEXT_CHUNKS * 3));
+        assertThat(response.sources()).hasSize(DocumentQnaService.COURSE_CONTEXT_CHUNKS)
+                .extracting(SourceSnippetDto::documentId).doesNotContain(11L).contains(12L);
+        assertThat(systemPromptSent()).doesNotContain("Файл: doc11.pdf").contains("[Фрагмент 8] Файл: doc12.pdf");
+    }
+
+    @Test
+    void taskStatesFollowMyTasks() {
+        QnaTask base = new QnaTask(1L, "t", NOW, TaskStatus.PENDING, 3L, "c", AssignmentStatus.ACTIVE, false, null,
+                null, false, false);
+        assertThat(DocumentQnaService.taskState(base)).isEqualTo("NOT_STARTED");
+        assertThat(DocumentQnaService.taskState(new QnaTask(1L, "t", NOW, TaskStatus.IN_PROGRESS, 3L, "c",
+                AssignmentStatus.ACTIVE, false, null, null, false, false))).isEqualTo("IN_PROGRESS");
+        assertThat(DocumentQnaService.taskState(new QnaTask(1L, "t", NOW, TaskStatus.PENDING, 3L, "c",
+                AssignmentStatus.CLOSED, false, null, null, false, false))).isEqualTo("CLOSED");
+        assertThat(DocumentQnaService.taskState(new QnaTask(1L, "t", NOW, TaskStatus.PENDING, 3L, "c",
+                AssignmentStatus.ACTIVE, false, null, null, true, false))).isEqualTo("BEFORE_ENROLLMENT");
+        assertThat(DocumentQnaService.taskState(new QnaTask(1L, "t", NOW, TaskStatus.SUBMITTED, 3L, "c",
+                AssignmentStatus.CLOSED, false, null, null, false, false))).isEqualTo("SUBMITTED");
+        assertThat(DocumentQnaService.taskState(OVERDUE_LAB)).isEqualTo("OVERDUE");
+        assertThat(DocumentQnaService.taskState(GRADED)).isEqualTo("GRADED");
+        assertThat(DocumentQnaService.citedTasks("[задача 2] [Задачи 1, 3] [задание 1] [задача 9]", 3))
+                .containsExactly(2, 1, 3);
+    }
+
+    @Test
+    void taskTitlesAreMaskedForTheAi() {
+        when(access.scope(student)).thenReturn(new Scope(false, List.of(3L), false));
+        when(tasks.findForQna(eq(5L), any(), any(), any())).thenReturn(List.of(new QnaTask(64L,
+                "Отчёт 990101300013", null, TaskStatus.PENDING, 3L, "Базы данных", AssignmentStatus.ACTIVE, false,
+                null, null, false, false)));
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Ответ [задача 1]"));
+
+        service.askAll("Что мне сдавать?", EMAIL);
+
+        assertThat(systemPromptSent()).doesNotContain("990101300013").contains("Отчёт [ИИН скрыт] · Срок: срок не указан");
     }
 }

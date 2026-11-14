@@ -16,11 +16,18 @@ import com.university.docassistant.entity.DocumentChunk;
 import com.university.docassistant.entity.DocumentType;
 import com.university.docassistant.entity.DocumentVisibility;
 import com.university.docassistant.entity.Role;
+import com.university.docassistant.entity.Task;
+import com.university.docassistant.entity.TaskStatus;
+import com.university.docassistant.dto.AnswerTaskDto;
 import com.university.docassistant.entity.User;
 import com.university.docassistant.repository.AssignmentRepository;
 import com.university.docassistant.repository.AssignmentRepository.QnaAssignment;
 import com.university.docassistant.repository.DocumentChunkRepository;
 import com.university.docassistant.repository.DocumentChunkRepository.ChunkHit;
+import com.university.docassistant.repository.EnrollmentRepository;
+import com.university.docassistant.repository.TaskRepository;
+import com.university.docassistant.repository.TaskRepository.QnaTask;
+import org.springframework.data.domain.PageRequest;
 import com.university.docassistant.security.AccessControlService;
 import com.university.docassistant.security.AccessControlService.Scope;
 import jakarta.persistence.EntityManager;
@@ -104,6 +111,10 @@ class DocumentQnaPostgresTest {
     private DocumentChunkRepository chunks;
     @Autowired
     private AssignmentRepository assignments;
+    @Autowired
+    private TaskRepository tasks;
+    @Autowired
+    private EnrollmentRepository enrollments;
     @Autowired
     private EntityManager em;
     @Autowired
@@ -204,6 +215,52 @@ class DocumentQnaPostgresTest {
         assertThat(system.getValue()).contains("Срок: 15.12.2026 18:00");
         assertThat(response.assignments()).extracting(a -> a.assignmentId()).containsExactly(project.getId());
         assertThat(response.citedExplicitly()).isTrue();
+    }
+
+    @Test
+    void theStudentsOwnTasksComeWithTheStatesOfMyTasks() {
+        User other = persist(User.builder().email("s2@uni.kz").fullName("Other").role(Role.ROLE_STUDENT)
+                .createdAt(LocalDateTime.now()).build());
+        enrollments.enroll(course.getId(), student.getId(), NOW.minusMonths(1));
+        enrollments.enroll(course.getId(), other.getId(), NOW.minusMonths(1));
+        Assignment lab = assignment(course, "Лабораторная работа 3", NOW.minusDays(2), AssignmentStatus.ACTIVE);
+        Assignment essay = assignment(course, "Эссе", NOW.minusDays(1), AssignmentStatus.ACTIVE);
+        Assignment closed = assignment(course, "Старый тест", NOW.minusDays(5), AssignmentStatus.CLOSED);
+        Assignment next = assignment(course, "Проект", NOW.plusDays(3), AssignmentStatus.ACTIVE);
+        Task overdue = task(student, lab, TaskStatus.PENDING, false);
+        Task late = task(student, essay, TaskStatus.SUBMITTED, true);
+        Task closedTask = task(student, closed, TaskStatus.PENDING, false);
+        Task upcoming = task(student, next, TaskStatus.IN_PROGRESS, false);
+        Task othersOverdue = task(other, lab, TaskStatus.PENDING, false);
+        flushAndClear();
+
+        List<QnaTask> mine = tasks.findForQna(student.getId(), List.of(course.getId()), NOW, PageRequest.of(0, 40));
+
+        assertThat(mine).extracting(QnaTask::id)
+                .containsExactly(overdue.getId(), upcoming.getId(), late.getId(), closedTask.getId())
+                .doesNotContain(othersOverdue.getId());
+        assertThat(mine).extracting(DocumentQnaService::taskState)
+                .containsExactly("OVERDUE", "IN_PROGRESS", "LATE", "CLOSED");
+        assertThat(tasks.findForQna(student.getId(), List.of(otherCourse.getId()), NOW, PageRequest.of(0, 40)))
+                .as("only the asked courses").isEmpty();
+
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Просрочена лабораторная работа 3 [задача 1]."));
+        DocumentAnswerResponse response = service.askCourse(course.getId(), "Какие у меня пропущенные задания?", STUDENT);
+
+        ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
+        verify(ai).chat(system.capture(), anyString());
+        assertThat(system.getValue()).contains("Сейчас: 13.11.2026 12:00.",
+                "[Задача 1] Курс: Базы данных · Название: Лабораторная работа 3 · Срок: 11.11.2026 12:00 · Состояние: просрочено",
+                "Название: Эссе · Срок: 12.11.2026 12:00 · Состояние: сдано с опозданием");
+        // The other student's copy of the same lab is not there: one line per own task only.
+        assertThat(system.getValue().split("Название: Лабораторная работа 3 · Срок", -1)).hasSize(3);
+        assertThat(response.tasks()).extracting(AnswerTaskDto::taskId, AnswerTaskDto::state)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(overdue.getId(), "OVERDUE"));
+    }
+
+    private Task task(User owner, Assignment assignment, TaskStatus status, boolean late) {
+        return persist(Task.builder().title(assignment.getTitle()).deadline(assignment.getDeadline()).status(status)
+                .late(late).course(assignment.getCourse()).assignment(assignment).user(owner).build());
     }
 
     private Document document(Course owner, String name, DocumentVisibility visibility) {

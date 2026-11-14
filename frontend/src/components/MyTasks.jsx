@@ -50,6 +50,14 @@ export default function MyTasks({ onStatusChanged }) {
   const [updatingId, setUpdatingId] = useState(null)
   const filtered = filter !== 'ALL' || courseId !== ''
 
+  // Coming from a task card of the AI chat (/dashboard#my-tasks): scroll here once the list is in.
+  const loaded = page !== null
+  useEffect(() => {
+    if (loaded && window.location.hash === '#my-tasks') {
+      document.getElementById('my-tasks')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [loaded])
+
   const fetchPage = useCallback((number) => api.get('/tasks/my', {
     params: {
       page: number,
@@ -161,7 +169,7 @@ export default function MyTasks({ onStatusChanged }) {
   }
 
   return (
-    <section className="rounded-card border border-line bg-surface p-5 shadow-card sm:p-6">
+    <section id="my-tasks" className="scroll-mt-20 rounded-card border border-line bg-surface p-5 shadow-card sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
           <ListTodo className="h-5 w-5 text-primary" aria-hidden="true" />

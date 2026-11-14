@@ -2,9 +2,13 @@ package com.university.docassistant.service;
 
 import com.university.docassistant.config.AiProperties;
 import com.university.docassistant.dto.AnswerAssignmentDto;
+import com.university.docassistant.dto.AnswerTaskDto;
 import com.university.docassistant.dto.DocumentAnswerResponse;
 import com.university.docassistant.dto.SourceSnippetDto;
+import com.university.docassistant.entity.AssignmentStatus;
 import com.university.docassistant.entity.Document;
+import com.university.docassistant.entity.Role;
+import com.university.docassistant.entity.TaskStatus;
 import com.university.docassistant.entity.User;
 import com.university.docassistant.exception.ApiException;
 import com.university.docassistant.exception.ErrorCodes;
@@ -12,17 +16,22 @@ import com.university.docassistant.repository.AssignmentRepository;
 import com.university.docassistant.repository.AssignmentRepository.QnaAssignment;
 import com.university.docassistant.repository.DocumentChunkRepository;
 import com.university.docassistant.repository.DocumentChunkRepository.ChunkHit;
+import com.university.docassistant.repository.TaskRepository;
+import com.university.docassistant.repository.TaskRepository.QnaTask;
 import com.university.docassistant.security.AccessControlService;
 import com.university.docassistant.security.AccessControlService.Scope;
 import com.university.docassistant.security.Permission;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.function.UnaryOperator;
@@ -42,7 +51,10 @@ import java.util.regex.Pattern;
  * <p>
  * The prompt also lists the ACTIVE assignments of the same courses ([АКТУАЛЬНЫЕ ЗАДАНИЯ КУРСА], from the
  * assignments table): a teacher may have moved a deadline after the document was written, and the block wins over
- * the document. The answer cites them as [задание N].
+ * the document. The answer cites them as [задание N]. For a student it also lists their own tasks in those courses
+ * ([МОИ ЗАДАЧИ], cited as [задача N]) with the states of "Мои задачи", so "какие у меня просрочки?" has an answer; the
+ * current date and time come from the shared Clock. A teacher or ADMIN has no own tasks and gets no such block.
+ * Fragments with the same text (a file uploaded twice) are kept once; the next best fragment takes the freed place.
  * When the AI is off, unreachable or busy, the answer is 503.
  */
 @Slf4j
@@ -52,6 +64,9 @@ public class DocumentQnaService {
     static final int DOCUMENT_CONTEXT_CHUNKS = 5;
     static final int COURSE_CONTEXT_CHUNKS = 8;
     static final int CONTEXT_ASSIGNMENTS = 30;
+    static final int CONTEXT_TASKS = 40;
+    /** Chunks fetched per kept one, so duplicates leave room for the next best fragments. */
+    private static final int DUPLICATE_HEADROOM = 3;
     private static final int MAX_QUERY_WORDS = 30;
     private static final long QUEUE_WAIT_SECONDS = 2;
 
@@ -69,11 +84,14 @@ public class DocumentQnaService {
     private static final Pattern ASSIGNMENT_NUMBERS = Pattern.compile(
             "(?:задани|assignment)\\p{L}*\\s*([\\d,\\s]+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     private static final Pattern NUMBER = Pattern.compile("\\d+");
+    private static final Pattern TASK_NUMBERS = Pattern.compile(
+            "(?:задач|task)\\p{L}*\\s*([\\d,\\s]+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     private static final DateTimeFormatter DEADLINE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
     private final DocumentService documentService;
     private final DocumentChunkRepository chunkRepository;
     private final AssignmentRepository assignmentRepository;
+    private final TaskRepository taskRepository;
     private final AccessControlService access;
     private final AiClientService aiClient;
     private final DocumentPrivacyService privacyService;
@@ -81,12 +99,13 @@ public class DocumentQnaService {
     private final Semaphore inFlight;
 
     public DocumentQnaService(DocumentService documentService, DocumentChunkRepository chunkRepository,
-                              AssignmentRepository assignmentRepository, AccessControlService access,
-                              AiClientService aiClient, AiProperties properties, DocumentPrivacyService privacyService,
-                              Clock clock) {
+                              AssignmentRepository assignmentRepository, TaskRepository taskRepository,
+                              AccessControlService access, AiClientService aiClient, AiProperties properties,
+                              DocumentPrivacyService privacyService, Clock clock) {
         this.documentService = documentService;
         this.chunkRepository = chunkRepository;
         this.assignmentRepository = assignmentRepository;
+        this.taskRepository = taskRepository;
         this.access = access;
         this.aiClient = aiClient;
         this.privacyService = privacyService;
@@ -97,27 +116,34 @@ public class DocumentQnaService {
     public DocumentAnswerResponse askDocument(Long documentId, String question, String userEmail) {
         // Checked first: the chunks below are read only for a document the user may view.
         Document document = documentService.getViewable(documentId, userEmail);
-        boolean realNames = access.can(access.currentUser(userEmail), document, Permission.MANAGE_COURSE);
+        User user = access.currentUser(userEmail);
+        boolean realNames = access.can(user, document, Permission.MANAGE_COURSE);
         requireAi();
         if (document.getTextSnippet() == null) {
             return DocumentAnswerResponse.withoutSources(NO_TEXT_ANSWER);
         }
 
         Optional<String> tsQuery = toTsQuery(question);
-        List<ChunkHit> context = tsQuery
-                .map(query -> chunkRepository.searchInDocument(documentId, query, DOCUMENT_CONTEXT_CHUNKS))
-                .orElse(List.of());
+        List<ChunkHit> context = distinct(tsQuery
+                .map(query -> chunkRepository.searchInDocument(documentId, query,
+                        DOCUMENT_CONTEXT_CHUNKS * DUPLICATE_HEADROOM))
+                .orElse(List.of()), DOCUMENT_CONTEXT_CHUNKS);
         if (context.isEmpty()) {
             // No shared words ("What is this document about?"): the opening of the document is the best guess.
-            context = chunkRepository.firstChunks(documentId, DOCUMENT_CONTEXT_CHUNKS);
+            context = distinct(chunkRepository.firstChunks(documentId, DOCUMENT_CONTEXT_CHUNKS * DUPLICATE_HEADROOM),
+                    DOCUMENT_CONTEXT_CHUNKS);
         }
+        LocalDateTime now = LocalDateTime.now(clock);
         // The assignments found in this document, with the deadlines as they are now.
         List<QnaAssignment> assignments = assignmentRepository.findForQnaInDocument(documentId, tsQuery.orElse(""),
-                LocalDateTime.now(clock), CONTEXT_ASSIGNMENTS);
-        if (context.isEmpty() && assignments.isEmpty()) {
+                now, CONTEXT_ASSIGNMENTS);
+        // A student's own tasks of the document's course: the course was authorized with the document above.
+        List<QnaTask> tasks = document.getCourse() == null ? List.of()
+                : ownTasks(user, List.of(document.getCourse().getId()), now);
+        if (context.isEmpty() && assignments.isEmpty() && tasks.isEmpty()) {
             return DocumentAnswerResponse.withoutSources(NO_TEXT_ANSWER);
         }
-        return answer(question, context, assignments, realNames);
+        return answer(question, new Context(context, assignments, tasks, isStudent(user), now), realNames);
     }
 
     /** Answers from the course's documents; 403 unless the user is enrolled in it, teaches it or is ADMIN. */
@@ -127,7 +153,7 @@ public class DocumentQnaService {
         requireAi();
         // includeTeacherOnly: the user teaches the course or is ADMIN - also who sees the real file names.
         boolean manages = access.scope(user).includeTeacherOnly();
-        return answerFromCourses(question, List.of(courseId), manages, manages);
+        return answerFromCourses(user, question, List.of(courseId), manages, manages);
     }
 
     /** Answers from the documents of all the user's courses (enrolled, taught, or all of them for ADMIN). */
@@ -138,24 +164,63 @@ public class DocumentQnaService {
         if (scope.courseIds().isEmpty()) {
             return DocumentAnswerResponse.withoutSources(NO_ANSWER);
         }
-        return answerFromCourses(question, scope.courseIds(), scope.includeTeacherOnly(), scope.includeTeacherOnly());
+        return answerFromCourses(user, question, scope.courseIds(), scope.includeTeacherOnly(),
+                scope.includeTeacherOnly());
     }
 
-    private DocumentAnswerResponse answerFromCourses(String question, List<Long> allowedCourseIds,
+    private DocumentAnswerResponse answerFromCourses(User user, String question, List<Long> allowedCourseIds,
                                                      boolean includeTeacherOnly, boolean realNames) {
         Optional<String> tsQuery = toTsQuery(question);
-        List<ChunkHit> context = tsQuery
+        List<ChunkHit> context = distinct(tsQuery
                 .map(query -> chunkRepository.searchInCourses(allowedCourseIds, includeTeacherOnly, query,
-                        COURSE_CONTEXT_CHUNKS))
-                .orElse(List.of());
-        // The same allowed courses as the chunks: assignments of other courses never reach the prompt.
+                        COURSE_CONTEXT_CHUNKS * DUPLICATE_HEADROOM))
+                .orElse(List.of()), COURSE_CONTEXT_CHUNKS);
+        LocalDateTime now = LocalDateTime.now(clock);
+        // The same allowed courses as the chunks: assignments and tasks of other courses never reach the prompt.
         List<QnaAssignment> assignments = assignmentRepository.findForQnaInCourses(allowedCourseIds,
-                tsQuery.orElse(""), LocalDateTime.now(clock), CONTEXT_ASSIGNMENTS);
-        if (context.isEmpty() && assignments.isEmpty()) {
+                tsQuery.orElse(""), now, CONTEXT_ASSIGNMENTS);
+        List<QnaTask> tasks = ownTasks(user, allowedCourseIds, now);
+        if (context.isEmpty() && assignments.isEmpty() && tasks.isEmpty()) {
             // Unlike a single document, there is no sensible "beginning" of a course to fall back to.
             return DocumentAnswerResponse.withoutSources(NO_ANSWER);
         }
-        return answer(question, context, assignments, realNames);
+        return answer(question, new Context(context, assignments, tasks, isStudent(user), now), realNames);
+    }
+
+    /** What goes into one prompt; {@code student}: the [МОИ ЗАДАЧИ] block applies to this user. */
+    record Context(List<ChunkHit> chunks, List<QnaAssignment> assignments, List<QnaTask> tasks, boolean student,
+                   LocalDateTime now) {
+        static Context ofChunks(List<ChunkHit> chunks) {
+            return new Context(chunks, List.of(), List.of(), false, null);
+        }
+    }
+
+    private static boolean isStudent(User user) {
+        return user.getRole() == Role.ROLE_STUDENT;
+    }
+
+    /** Only the current user's own tasks, only for a student, only in the courses already authorized. */
+    private List<QnaTask> ownTasks(User user, List<Long> allowedCourseIds, LocalDateTime now) {
+        if (!isStudent(user) || allowedCourseIds.isEmpty()) {
+            return List.of();
+        }
+        return taskRepository.findForQna(user.getId(), allowedCourseIds, now, PageRequest.of(0, CONTEXT_TASKS));
+    }
+
+    /** The first {@code limit} chunks with distinct text, in rank order: a file uploaded twice counts once. */
+    static List<ChunkHit> distinct(List<ChunkHit> ranked, int limit) {
+        List<ChunkHit> kept = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (ChunkHit hit : ranked) {
+            if (kept.size() == limit) {
+                break;
+            }
+            String key = hit.getContent() == null ? "" : hit.getContent().strip().replaceAll("\\s+", " ");
+            if (seen.add(key)) {
+                kept.add(hit);
+            }
+        }
+        return kept;
     }
 
     /**
@@ -163,14 +228,17 @@ public class DocumentQnaService {
      * question itself are masked here, so no personal data reaches the AI. {@code realNames}: the sources show the
      * real file names (the course teacher, ADMIN), otherwise masked ones.
      */
-    private DocumentAnswerResponse answer(String question, List<ChunkHit> context, List<QnaAssignment> assignments,
-                                          boolean realNames) {
-        String reply = callAi(systemPrompt(context, assignments, privacyService::maskFileName),
+    private DocumentAnswerResponse answer(String question, Context prompt, boolean realNames) {
+        List<ChunkHit> context = prompt.chunks();
+        List<QnaAssignment> assignments = prompt.assignments();
+        List<QnaTask> tasks = prompt.tasks();
+        String reply = callAi(systemPrompt(prompt, privacyService::maskFileName),
                 userPrompt(privacyService.maskQuestion(question)));
 
         Set<Integer> cited = citedFragments(reply, context.size());
         Set<Integer> citedAssignments = citedAssignments(reply, assignments.size());
-        boolean citedExplicitly = !cited.isEmpty() || !citedAssignments.isEmpty();
+        Set<Integer> citedTasks = citedTasks(reply, tasks.size());
+        boolean citedExplicitly = !cited.isEmpty() || !citedAssignments.isEmpty() || !citedTasks.isEmpty();
         if (!citedExplicitly && isNoAnswer(reply)) {
             return DocumentAnswerResponse.withoutSources(reply);
         }
@@ -191,7 +259,13 @@ public class DocumentQnaService {
             citedList.add(new AnswerAssignmentDto(number, assignment.getId(), assignment.getCourseId(),
                     assignment.getCourseTitle(), assignment.getTitle(), assignment.getDeadline()));
         }
-        return new DocumentAnswerResponse(reply, true, sources, citedList, citedExplicitly);
+        List<AnswerTaskDto> citedTaskList = new ArrayList<>();
+        for (int number : citedTasks) {
+            QnaTask task = tasks.get(number - 1);
+            citedTaskList.add(new AnswerTaskDto(number, task.id(), task.courseId(), task.courseTitle(), task.title(),
+                    task.deadline(), taskState(task)));
+        }
+        return new DocumentAnswerResponse(reply, true, sources, citedList, citedTaskList, citedExplicitly);
     }
 
     private String callAi(String systemPrompt, String userPrompt) {
@@ -224,22 +298,25 @@ public class DocumentQnaService {
      * documents the user may access. Chunks carry no page numbers, so citations name the file and the fragment.
      */
     static String systemPrompt(List<ChunkHit> context) {
-        return systemPrompt(context, List.of(), UnaryOperator.identity());
+        return systemPrompt(Context.ofChunks(context), UnaryOperator.identity());
     }
 
     /**
-     * {@code mask} masks the document names, assignment and course titles put into the prompt, as the chunk texts
-     * already are.
+     * {@code mask} masks the document names, assignment, task and course titles put into the prompt, as the chunk
+     * texts already are.
      */
-    static String systemPrompt(List<ChunkHit> context, List<QnaAssignment> assignments, UnaryOperator<String> mask) {
-        StringBuilder prompt = new StringBuilder("""
+    static String systemPrompt(Context prompt, UnaryOperator<String> mask) {
+        List<ChunkHit> context = prompt.chunks();
+        List<QnaAssignment> assignments = prompt.assignments();
+        List<QnaTask> tasks = prompt.tasks();
+        StringBuilder text = new StringBuilder("""
                 Ты — официальный интеллектуальный ассистент UniDocs Assistant.
                 Твоя задача — отвечать на вопросы пользователей STRICTLY на основе переданных ниже блоков \
-                [КОНТЕКСТ ДОКУМЕНТОВ] и [АКТУАЛЬНЫЕ ЗАДАНИЯ КУРСА].
+                [КОНТЕКСТ ДОКУМЕНТОВ], [АКТУАЛЬНЫЕ ЗАДАНИЯ КУРСА] и [МОИ ЗАДАЧИ].
 
                 СТРОГИЕ ПРАВИЛА:
-                1. Если в [КОНТЕКСТЕ ДОКУМЕНТОВ] и [АКТУАЛЬНЫХ ЗАДАНИЯХ КУРСА] нет прямого ответа на вопрос \
-                пользователя, ты ОБЯЗАН ответить ровно одной фразой:
+                1. Если ни в одном из блоков нет ответа на вопрос пользователя, ты ОБЯЗАН ответить ровно одной \
+                фразой:
                    "%s"
                 2. Категорически запрещено придумывать дедлайны, оценки, максимальное количество студентов или правила.
                 3. Каждое утверждение подкрепляй ссылкой на документ в формате: [Имя_файла.pdf, фрагмент N], где N — \
@@ -254,25 +331,114 @@ public class DocumentQnaService {
                 того, как документ был написан. Если дата в документе расходится с этим блоком, верна дата из блока: \
                 назови её и прямо скажи, что срок изменён. Ссылайся на задание в формате [задание N], где N — номер \
                 задания из блока.
+                8. [МОИ ЗАДАЧИ] — личные задачи пользователя-студента с их состоянием на текущий момент. На вопросы \
+                о своих задачах, просрочках, пропущенных работах и ближайших дедлайнах отвечай по блокам \
+                [МОИ ЗАДАЧИ] и [АКТУАЛЬНЫЕ ЗАДАНИЯ КУРСА], сравнивая сроки с текущей датой. Ссылайся на задачу \
+                в формате [задача N], на задание — [задание N]. Состояние задачи бери из блока, не вычисляй заново.
+                9. Если просроченных задач нет, прямо так и скажи (и, если есть, назови ближайшие дедлайны) — это \
+                ответ, а не отсутствие информации. Фраза из правила 1 — только когда ни один блок не содержит ответа.
+                10. Если блока [МОИ ЗАДАЧИ] нет, а пользователь — преподаватель или деканат, личных задач у него нет: \
+                на вопрос о своих пропущенных заданиях скажи, что личные задачи есть только у студентов, и, если \
+                в [АКТУАЛЬНЫХ ЗАДАНИЯХ КУРСА] есть сроки, перечисли ближайшие дедлайны.
 
+                %s
                 [КОНТЕКСТ ДОКУМЕНТОВ]
-                """.formatted(NO_ANSWER));
+                """.formatted(NO_ANSWER, situation(prompt)));
         if (context.isEmpty()) {
-            prompt.append("Подходящих фрагментов документов не найдено.\n\n");
+            text.append("Подходящих фрагментов документов не найдено.\n\n");
         }
         for (int i = 0; i < context.size(); i++) {
             ChunkHit hit = context.get(i);
-            prompt.append("[Фрагмент ").append(i + 1).append("] Файл: ").append(mask.apply(hit.getDocumentName()))
+            text.append("[Фрагмент ").append(i + 1).append("] Файл: ").append(mask.apply(hit.getDocumentName()))
                     .append('\n')
                     .append(hit.getContent()).append("\n\n");
         }
         if (!assignments.isEmpty()) {
-            prompt.append("[АКТУАЛЬНЫЕ ЗАДАНИЯ КУРСА]\n");
+            text.append("[АКТУАЛЬНЫЕ ЗАДАНИЯ КУРСА]\n");
             for (int i = 0; i < assignments.size(); i++) {
-                prompt.append(assignmentLine(i + 1, assignments.get(i), mask)).append('\n');
+                text.append(assignmentLine(i + 1, assignments.get(i), mask)).append('\n');
+            }
+            text.append('\n');
+        }
+        if (!tasks.isEmpty()) {
+            text.append("[МОИ ЗАДАЧИ]\n");
+            for (int i = 0; i < tasks.size(); i++) {
+                text.append(taskLine(i + 1, tasks.get(i), mask)).append('\n');
             }
         }
-        return prompt.toString().stripTrailing();
+        return text.toString().stripTrailing();
+    }
+
+    /** The current moment and who asks; before the blocks, so the model compares deadlines with now. */
+    private static String situation(Context prompt) {
+        if (prompt.now() == null) {
+            return "";
+        }
+        String who = prompt.student()
+                ? "Пользователь — студент; его личные задачи — в блоке [МОИ ЗАДАЧИ] (если блока нет, задач у него нет)."
+                : "Пользователь — преподаватель или деканат: личных задач у него нет, блока [МОИ ЗАДАЧИ] нет.";
+        return "Сейчас: " + DEADLINE_FORMAT.format(prompt.now()) + ". " + who + "\n";
+    }
+
+    /** "[Задача 1] Курс: … · Название: … · Срок: … · Состояние: просрочено · Балл: 8 из 10". */
+    static String taskLine(int number, QnaTask task, UnaryOperator<String> mask) {
+        String deadline = task.deadline() == null ? "срок не указан" : DEADLINE_FORMAT.format(task.deadline());
+        String course = task.courseTitle() == null ? "—" : mask.apply(task.courseTitle());
+        StringBuilder line = new StringBuilder("[Задача ").append(number).append("] Курс: ").append(course)
+                .append(" · Название: ").append(mask.apply(task.title())).append(" · Срок: ").append(deadline)
+                .append(" · Состояние: ").append(STATE_WORDS.get(taskState(task)));
+        if (task.score() != null) {
+            line.append(" · Балл: ").append(plain(task.score()));
+            if (task.maxScore() != null) {
+                line.append(" из ").append(task.maxScore());
+            }
+        } else if (task.maxScore() != null) {
+            line.append(" · Максимальный балл: ").append(task.maxScore());
+        }
+        return line.toString();
+    }
+
+    private static final java.util.Map<String, String> STATE_WORDS = java.util.Map.of(
+            "OVERDUE", "просрочено",
+            "GRADED", "оценено",
+            "LATE", "сдано с опозданием",
+            "SUBMITTED", "сдано",
+            "COMPLETED", "выполнено",
+            "CLOSED", "задание закрыто",
+            "BEFORE_ENROLLMENT", "срок прошёл до записи",
+            "IN_PROGRESS", "в работе",
+            "NOT_STARTED", "не начато");
+
+    /**
+     * The state "Мои задачи" shows: overdue by the list's OVERDUE condition (computed in the query), otherwise as
+     * TaskStateBadge and deadlineExcuse decide - handed-in work by its status, then a closed assignment, then a
+     * deadline that passed before the student enrolled, then the student's own status.
+     */
+    static String taskState(QnaTask task) {
+        if (task.overdue()) {
+            return "OVERDUE";
+        }
+        TaskStatus status = task.status();
+        if (status == TaskStatus.GRADED) {
+            return "GRADED";
+        }
+        if (status == TaskStatus.SUBMITTED) {
+            return task.late() ? "LATE" : "SUBMITTED";
+        }
+        if (status == TaskStatus.COMPLETED) {
+            return "COMPLETED";
+        }
+        if (task.assignmentStatus() == AssignmentStatus.CLOSED) {
+            return "CLOSED";
+        }
+        if (task.deadlineBeforeEnrollment()) {
+            return "BEFORE_ENROLLMENT";
+        }
+        return status == TaskStatus.IN_PROGRESS ? "IN_PROGRESS" : "NOT_STARTED";
+    }
+
+    private static String plain(BigDecimal score) {
+        return score.stripTrailingZeros().toPlainString();
     }
 
     /** "[Задание 2] Курс: … · Название: … · Срок: 20.12.2026 23:59 · Максимальный балл: 10 · После срока: …". */
@@ -319,6 +485,11 @@ public class DocumentQnaService {
     /** Assignment numbers cited as [задание n], [Задания 1, 2] or [file.pdf, фрагмент 1; задание 2] that exist. */
     static Set<Integer> citedAssignments(String answer, int assignmentCount) {
         return cited(answer, assignmentCount, ASSIGNMENT_NUMBERS, false);
+    }
+
+    /** The student's own tasks cited as [задача n] or [Задачи 1, 2] that exist in the [МОИ ЗАДАЧИ] block. */
+    static Set<Integer> citedTasks(String answer, int taskCount) {
+        return cited(answer, taskCount, TASK_NUMBERS, false);
     }
 
     /** {@code bareNumbers}: "[1, 2]" counts too (fragments only). Numbers outside 1..max are dropped. */
