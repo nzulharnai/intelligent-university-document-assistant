@@ -1,32 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { AlertTriangle, ArrowLeft, Check, ChevronRight, Copy, FileText, FolderOpen, GraduationCap, RefreshCw, ShieldAlert, UserRound, Users, X } from 'lucide-react'
+import { ArrowLeft, Check, Copy, GraduationCap, RefreshCw, ShieldAlert, UserRound, Users } from 'lucide-react'
 import api, { describeError } from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { ROLE_ADMIN, ROLE_STUDENT } from '../constants/roles'
-import { VISIBILITY_LABELS } from '../constants/documents'
 import Navbar from '../components/Navbar'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ErrorState from '../components/ErrorState'
 import CourseChat from '../components/CourseChat'
 import CourseAssignments from '../components/CourseAssignments'
+import CourseDocuments from '../components/CourseDocuments'
 import CourseStudents from '../components/CourseStudents'
 import DocumentUpload from '../components/DocumentUpload'
-import DocumentAiBadge from '../components/DocumentAiBadge'
-import PiiBadge from '../components/PiiBadge'
-import OcrBadge from '../components/OcrBadge'
-import ReclassifyButton from '../components/ReclassifyButton'
-import { canDeleteDocument, getFileFormat } from '../utils/fileTypes'
-import { formatDateTime } from '../utils/dates'
-import useDocumentStatus from '../hooks/useDocumentStatus'
-import { isClassifying, withLiveStatus } from '../utils/documentStatus'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
-import EmptyState from '../components/ui/EmptyState'
 import Skeleton, { SkeletonLines } from '../components/ui/Skeleton'
-
-const DOCS_PAGE_SIZE = 10
 
 export default function CoursePage() {
   const { id } = useParams()
@@ -228,167 +217,5 @@ function InviteLinkControls({ courseId }) {
         </ConfirmDialog>
       )}
     </>
-  )
-}
-
-/**
- * The course's documents. The teacher and ADMIN also get "Требуют проверки: N" - documents students do not see because
- * the AI or the OCR failed on them, until a type is set by hand - which filters the list to them.
- */
-function CourseDocuments({ courseId, canManage, version }) {
-  const { notifyError } = useToast()
-  const [page, setPage] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [attempt, setAttempt] = useState(0)
-  const [reviewOnly, setReviewOnly] = useState(false)
-  // null until known (or when the count could not be loaded): then no counter is shown.
-  const [reviewCount, setReviewCount] = useState(null)
-
-  const fetchPage = useCallback((number) => api.get('/documents', {
-    params: { courseId, page: number, size: DOCS_PAGE_SIZE, ...(reviewOnly ? { needsReview: true } : {}) },
-  }).then(({ data }) => data), [courseId, reviewOnly])
-
-  useEffect(() => {
-    if (!canManage) return undefined
-    let cancelled = false
-    api.get('/documents', { params: { courseId, needsReview: true, size: 1 } })
-      .then(({ data }) => !cancelled && setReviewCount(data.totalElements))
-      .catch(() => !cancelled && setReviewCount(null))
-    return () => {
-      cancelled = true
-    }
-  }, [canManage, courseId, version, attempt])
-
-  const toggleReview = () => {
-    setPage(null)
-    setLoading(true)
-    setReviewOnly((value) => !value)
-  }
-
-  useEffect(() => {
-    let cancelled = false
-    fetchPage(0)
-      .then((data) => {
-        if (cancelled) return
-        setPage(data)
-        setError('')
-      })
-      .catch((err) => !cancelled && setError(describeError(err).message))
-      .finally(() => !cancelled && setLoading(false))
-    return () => {
-      cancelled = true
-    }
-  }, [fetchPage, version, attempt])
-
-  const retry = () => {
-    setError('')
-    setLoading(true)
-    setAttempt((value) => value + 1)
-  }
-
-  const updateDoc = useCallback((id, changes) => setPage((current) => current && ({
-    ...current,
-    content: current.content.map((doc) => (doc.id === id ? { ...doc, ...changes } : doc)),
-  })), [])
-
-  // Rows the AI is still classifying are polled (one request for all of them) and shown live.
-  const pendingDocs = useMemo(() => (page?.content ?? []).filter(isClassifying), [page])
-  const liveStatuses = useDocumentStatus(pendingDocs, { deadlines: false })
-
-  const loadMore = async () => {
-    setLoading(true)
-    try {
-      const next = await fetchPage(page.page + 1)
-      setPage({ ...next, content: [...page.content, ...next.content] })
-    } catch (err) {
-      notifyError(err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <section className="rounded-card border border-line bg-surface shadow-card">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line-subtle px-5 py-4 sm:px-6">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
-          <FileText className="h-4.5 w-4.5 text-primary" aria-hidden="true" /> Документы курса
-          {page && !reviewOnly && <span className="rounded-full bg-page-alt px-2 py-0.5 text-xs font-semibold tabular-nums text-fg-secondary">{page.totalElements}</span>}
-        </h2>
-        {canManage && (reviewOnly || reviewCount > 0) && (
-          <button
-            type="button"
-            onClick={toggleReview}
-            aria-pressed={reviewOnly}
-            title={reviewOnly ? 'Показать все документы' : 'Студенты не видят эти документы, пока вы не укажете их тип'}
-            className={`ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ring-1 ring-inset transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${reviewOnly
-              ? 'bg-warning text-on-primary ring-warning hover:bg-warning/90'
-              : 'bg-warning-soft text-warning-fg ring-warning/30 hover:ring-warning/60'}`}
-          >
-            <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-            Требуют проверки: {reviewCount ?? 0}
-            {reviewOnly && <X className="h-3.5 w-3.5" aria-hidden="true" />}
-          </button>
-        )}
-      </div>
-      {error ? (
-        <ErrorState title="Не удалось загрузить документы курса" message={error} onRetry={retry} />
-      ) : !page && loading ? (
-        <div role="status" className="space-y-3 px-5 py-4 sm:px-6">
-          <span className="sr-only">Загрузка…</span>
-          {[0, 1, 2].map((index) => (
-            <div key={index} className="flex items-center gap-3">
-              <Skeleton className="h-9 w-9 shrink-0" rounded="rounded-control" />
-              <SkeletonLines lines={2} className="flex-1" />
-            </div>
-          ))}
-        </div>
-      ) : page?.content.length === 0 ? (
-        <div className="p-5 sm:p-6">
-          <EmptyState
-            compact
-            icon={FolderOpen}
-            title={reviewOnly ? 'Документов, которые требуют проверки, нет.' : 'Доступных вам документов в курсе пока нет.'}
-          />
-        </div>
-      ) : page && (
-        <>
-          <ul className="divide-y divide-line-subtle">
-            {page.content.map((row) => {
-              const doc = withLiveStatus(row, liveStatuses[row.id])
-              const format = getFileFormat(doc)
-              const FormatIcon = format.icon
-              return (
-                <li key={doc.id} className="flex items-center gap-2 pr-3 transition-colors hover:bg-page">
-                  <Link to={`/documents/${doc.id}`} state={{ from: `/courses/${courseId}` }} className="group flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary sm:pl-6">
-                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-control ${format.tile}`}><FormatIcon className="h-4 w-4" aria-hidden="true" /></span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-fg group-hover:text-primary-fg">{doc.originalFileName}</span>
-                      <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-fg-muted">
-                        <DocumentAiBadge doc={doc} />
-                        <PiiBadge doc={doc} />
-                        <OcrBadge doc={doc} />
-                        <span className="truncate tabular-nums">{VISIBILITY_LABELS[doc.visibility]} · {formatDateTime(doc.uploadedAt)}</span>
-                      </span>
-                    </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-fg-muted group-hover:text-primary" aria-hidden="true" />
-                  </Link>
-                  {canDeleteDocument(doc) && (
-                    <ReclassifyButton doc={doc} onUpdated={(changes) => updateDoc(doc.id, changes)} compact />
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-          {!page.last && (
-            <div className="border-t border-line-subtle p-3">
-              <Button variant="ghost" onClick={loadMore} loading={loading} className="w-full">
-                Показать ещё
-              </Button>
-            </div>
-          )}
-        </>
-      )}
-    </section>
   )
 }
