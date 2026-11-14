@@ -276,18 +276,18 @@ class DocumentReviewVisibilityTest {
 
         @Test
         void listAsksTheDatabaseForStudentVisibleRowsAndNeedsReviewIsForTheTeacher() {
-            when(documents.findSummariesInCourses(any(), anyBoolean(), any(), anyBoolean(), any()))
+            when(documents.findSummariesInCourses(any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), any()))
                     .thenReturn(Page.empty());
 
             service.list("student@uni.kz", 10L, false, PageRequest.of(0, 10));
-            verify(documents).findSummariesInCourses(List.of(10L), false, 10L, false, PageRequest.of(0, 10));
+            verify(documents).findSummariesInCourses(List.of(10L), false, 10L, false, null, false, PageRequest.of(0, 10));
 
             assertForbidden(() -> service.list("student@uni.kz", 10L, true, PageRequest.of(0, 10)),
                     ErrorCodes.COURSE_NOT_ENROLLED, null);
             verify(audit).record(eq("student@uni.kz"), eq(AuditService.ACCESS_DENIED), contains("MANAGE_COURSE"));
 
             service.list("teacher@uni.kz", 10L, true, PageRequest.of(0, 10));
-            verify(documents).findSummariesInCourses(List.of(10L), true, 10L, true, PageRequest.of(0, 10));
+            verify(documents).findSummariesInCourses(List.of(10L), true, 10L, true, null, false, PageRequest.of(0, 10));
         }
 
         @Test

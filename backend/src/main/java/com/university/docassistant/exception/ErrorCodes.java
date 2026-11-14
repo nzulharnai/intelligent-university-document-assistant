@@ -84,6 +84,12 @@ public final class ErrorCodes {
     public static final String TOO_MANY_ATTEMPTS = "TOO_MANY_ATTEMPTS";
     public static final String NOT_A_STUDENT = "NOT_A_STUDENT";
     public static final String NOT_A_TEACHER = "NOT_A_TEACHER";
+    /** US-16: a week outside 1..the course's weeks count (or a document without a course). */
+    public static final String WEEK_OUT_OF_RANGE = "WEEK_OUT_OF_RANGE";
+    /** US-16: the weeks count cannot go below a week that has documents. */
+    public static final String WEEK_IN_USE = "WEEK_IN_USE";
+    /** US-16: "Принять" on a document the AI suggested no week for. */
+    public static final String WEEK_NO_SUGGESTION = "WEEK_NO_SUGGESTION";
 
     // --- Tasks and submissions --------------------------------------------------------------------------------------
     public static final String TASK_NOT_OWN = "TASK_NOT_OWN";

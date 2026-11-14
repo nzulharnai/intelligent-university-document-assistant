@@ -109,14 +109,16 @@ public class DocumentController {
     /**
      * Documents of the user's courses, optionally only those of one course ({@code ?courseId=}); {@code ?needsReview=true}
      * keeps those the AI or the OCR failed on ("Требуют проверки"), for the course teacher and ADMIN.
+     * US-16 {@code ?week=}: a week number or "none" ("Без недели"), usually with {@code courseId}.
      */
     @GetMapping
     public PageResponse<DocumentResponse> list(
             @RequestParam(value = "courseId", required = false) Long courseId,
             @RequestParam(value = "needsReview", defaultValue = "false") boolean needsReview,
+            @RequestParam(value = "week", required = false) String week,
             @PageableDefault(size = 20, sort = "uploadedAt", direction = Sort.Direction.DESC) Pageable pageable,
             @AuthenticationPrincipal UserDetails principal) {
-        return documentService.list(principal.getUsername(), courseId, needsReview,
+        return documentService.list(principal.getUsername(), courseId, needsReview, week,
                 SortValidator.requireSortable(pageable, SORTABLE_FIELDS));
     }
 

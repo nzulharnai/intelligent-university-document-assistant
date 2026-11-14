@@ -59,12 +59,21 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                  AND d.aiStatus <> com.university.docassistant.entity.AiStatus.MANUAL))
             """;
 
+    /**
+     * US-16 "?week=": {@code week} keeps the documents of that confirmed week (null: any), {@code noWeek} only those
+     * without one ("Без недели"). A suggested week never counts.
+     */
+    String WEEK_FILTER = "(:week IS NULL OR d.weekNumber = :week) AND (:noWeek = FALSE OR d.weekNumber IS NULL)";
+
     /** For ADMIN: every document; {@code courseId} null means all of them. */
-    @Query(value = DocumentSummary.SELECT + "WHERE (:courseId IS NULL OR c.id = :courseId) AND " + NEEDS_REVIEW,
+    @Query(value = DocumentSummary.SELECT + "WHERE (:courseId IS NULL OR c.id = :courseId) AND " + NEEDS_REVIEW
+            + " AND " + WEEK_FILTER,
             countQuery = "SELECT COUNT(d) FROM Document d WHERE (:courseId IS NULL OR d.course.id = :courseId) AND "
-                    + NEEDS_REVIEW)
+                    + NEEDS_REVIEW + " AND " + WEEK_FILTER)
     Page<DocumentSummary> findAllSummaries(@Param("courseId") Long courseId,
                                            @Param("needsReview") boolean needsReview,
+                                           @Param("week") Integer week,
+                                           @Param("noWeek") boolean noWeek,
                                            Pageable pageable);
 
     /**
@@ -75,16 +84,20 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     @Query(value = DocumentSummary.SELECT + """
             WHERE c.id IN :courseIds
               AND (:courseId IS NULL OR c.id = :courseId)
-              AND (:includeTeacherOnly = TRUE OR """ + VISIBLE_TO_STUDENTS + ") AND " + NEEDS_REVIEW,
+              AND (:includeTeacherOnly = TRUE OR """ + VISIBLE_TO_STUDENTS + ") AND " + NEEDS_REVIEW
+            + " AND " + WEEK_FILTER,
             countQuery = """
             SELECT COUNT(d) FROM Document d
             WHERE d.course.id IN :courseIds
               AND (:courseId IS NULL OR d.course.id = :courseId)
-              AND (:includeTeacherOnly = TRUE OR """ + VISIBLE_TO_STUDENTS + ") AND " + NEEDS_REVIEW)
+              AND (:includeTeacherOnly = TRUE OR """ + VISIBLE_TO_STUDENTS + ") AND " + NEEDS_REVIEW
+            + " AND " + WEEK_FILTER)
     Page<DocumentSummary> findSummariesInCourses(@Param("courseIds") Collection<Long> courseIds,
                                                  @Param("includeTeacherOnly") boolean includeTeacherOnly,
                                                  @Param("courseId") Long courseId,
                                                  @Param("needsReview") boolean needsReview,
+                                                 @Param("week") Integer week,
+                                                 @Param("noWeek") boolean noWeek,
                                                  Pageable pageable);
 
     @Query(DocumentSummary.SELECT + "WHERE d.id IN :ids")
@@ -302,4 +315,91 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     @Query("SELECT COALESCE(SUM(d.fileSize), 0) FROM Document d")
     long sumFileSize();
+    // --- US-16: course weeks ----------------------------------------------------------------------------------------
+
+    /** [week_number (null for "Без недели"), count] of a course's documents; students' counts only what they see. */
+    @Query(value = """
+            SELECT d.week_number, COUNT(*) FROM documents d
+            WHERE d.course_id = :courseId AND (:includeHidden OR """ + VISIBLE_TO_STUDENTS_SQL + """
+            )
+            GROUP BY d.week_number
+            """, nativeQuery = true)
+    List<Object[]> countByWeek(@Param("courseId") Long courseId, @Param("includeHidden") boolean includeHidden);
+
+    /** Suggestions the teacher has not accepted yet ("Принять все подсказки (N)"). */
+    @Query("""
+            SELECT COUNT(d) FROM Document d
+            WHERE d.course.id = :courseId AND d.weekNumber IS NULL AND d.suggestedWeek IS NOT NULL
+            """)
+    long countPendingSuggestions(@Param("courseId") Long courseId);
+
+    /** The highest week a document of the course is in; null when none has a week. */
+    @Query("SELECT MAX(d.weekNumber) FROM Document d WHERE d.course.id = :courseId")
+    Integer findMaxWeek(@Param("courseId") Long courseId);
+
+    /** Sets or clears the confirmed week; the suggestion goes either way. */
+    @Modifying
+    @Query("""
+            UPDATE Document d SET d.weekNumber = :week, d.suggestedWeek = NULL, d.suggestedWeekConfidence = NULL
+            WHERE d.id = :id
+            """)
+    int setWeek(@Param("id") Long id, @Param("week") Integer week);
+
+    /** A suggestion, stored only while the document has no confirmed week; 0 otherwise. */
+    @Modifying
+    @Query("""
+            UPDATE Document d SET d.suggestedWeek = :week, d.suggestedWeekConfidence = :confidence
+            WHERE d.id = :id AND d.weekNumber IS NULL
+            """)
+    int saveSuggestion(@Param("id") Long id, @Param("week") int week, @Param("confidence") double confidence);
+
+    /** The open suggestions of a course within its weeks: [document id, suggested week], by id. */
+    @Query("""
+            SELECT d.id, d.suggestedWeek FROM Document d
+            WHERE d.course.id = :courseId AND d.weekNumber IS NULL AND d.suggestedWeek IS NOT NULL
+              AND d.suggestedWeek <= :weeksCount
+            ORDER BY d.id
+            """)
+    List<Object[]> findPendingSuggestions(@Param("courseId") Long courseId, @Param("weeksCount") int weeksCount);
+
+    /** "Принять все подсказки": every open suggestion within the course's weeks becomes the document's week. */
+    @Modifying
+    @Query("""
+            UPDATE Document d SET d.weekNumber = d.suggestedWeek, d.suggestedWeek = NULL,
+                d.suggestedWeekConfidence = NULL
+            WHERE d.course.id = :courseId AND d.weekNumber IS NULL AND d.suggestedWeek IS NOT NULL
+              AND d.suggestedWeek <= :weeksCount
+            """)
+    int acceptAllSuggestions(@Param("courseId") Long courseId, @Param("weeksCount") int weeksCount);
+
+    /** Suggestions past a lowered weeks count no longer fit any week. */
+    @Modifying
+    @Query("""
+            UPDATE Document d SET d.suggestedWeek = NULL, d.suggestedWeekConfidence = NULL
+            WHERE d.course.id = :courseId AND d.suggestedWeek > :weeksCount
+            """)
+    int clearSuggestionsAbove(@Param("courseId") Long courseId, @Param("weeksCount") int weeksCount);
+
+    /** Documents of the course that may get a suggestion and have neither a week nor a suggestion, by id. */
+    @Query("""
+            SELECT d.id FROM Document d
+            WHERE d.course.id = :courseId AND d.weekNumber IS NULL AND d.suggestedWeek IS NULL
+              AND d.category IN :categories AND d.maskedText IS NOT NULL
+            ORDER BY d.id
+            """)
+    List<Long> findIdsWithoutWeek(@Param("courseId") Long courseId,
+                                  @Param("categories") Collection<DocumentCategory> categories);
+
+    /** What the week suggestion reads; {@code weeksCount} is the course's, null without a course. */
+    record WeekSource(Long id, DocumentCategory category, String originalFileName, String maskedText, String aiSummary,
+                      String aiTopics, Integer weekNumber, Long courseId, Integer weeksCount) {
+    }
+
+    @Query("""
+            SELECT new com.university.docassistant.repository.DocumentRepository$WeekSource(
+                d.id, d.category, d.originalFileName, d.maskedText, d.aiSummary, d.aiTopics, d.weekNumber, c.id,
+                c.weeksCount)
+            FROM Document d LEFT JOIN d.course c WHERE d.id = :id
+            """)
+    Optional<WeekSource> findWeekSource(@Param("id") Long id);
 }

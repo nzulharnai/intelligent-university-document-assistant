@@ -42,6 +42,10 @@ public class AuditService {
     public static final String PII_ORIGINAL_DENIED = "PII_ORIGINAL_DENIED";
     public static final String DOCUMENT_CATEGORY_SET = "DOCUMENT_CATEGORY_SET";
     public static final String OCR_RETRY_REQUESTED = "OCR_RETRY_REQUESTED";
+    /** US-16: a document's week set, cleared or taken from the AI's suggestion; details say which. */
+    public static final String DOCUMENT_WEEK_SET = "DOCUMENT_WEEK_SET";
+    /** US-16: a course's weeks count or a week's topic changed. */
+    public static final String COURSE_WEEKS_CHANGED = "COURSE_WEEKS_CHANGED";
     public static final String TASK_SUBMITTED = "TASK_SUBMITTED";
     /** A grade was given or changed; details carry the old and the new score. */
     public static final String TASK_GRADED = "TASK_GRADED";

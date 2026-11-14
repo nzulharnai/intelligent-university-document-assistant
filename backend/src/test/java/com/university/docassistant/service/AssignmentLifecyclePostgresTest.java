@@ -456,7 +456,7 @@ class AssignmentLifecyclePostgresTest {
         assertThat(listed(true, false)).containsExactlyInAnyOrder(syllabus.getId(), failedAi.getId(),
                 failedOcr.getId(), typedByHand.getId(), pending.getId());
         assertThat(listed(true, true)).as("Требуют проверки").containsExactlyInAnyOrder(failedAi.getId(), failedOcr.getId());
-        assertThat(documents.findAllSummaries(course.getId(), true, PageRequest.of(0, 10)).getContent())
+        assertThat(documents.findAllSummaries(course.getId(), true, null, false, PageRequest.of(0, 10)).getContent())
                 .extracting(DocumentSummary::id).containsExactlyInAnyOrder(failedAi.getId(), failedOcr.getId());
 
         assertThat(documents.searchVisibleIds("лабораторная", false, courseIds, false, PageRequest.of(0, 10))
@@ -513,7 +513,7 @@ class AssignmentLifecyclePostgresTest {
 
     private List<Long> listed(boolean includeTeacherOnly, boolean needsReview) {
         return documents.findSummariesInCourses(List.of(course.getId()), includeTeacherOnly, course.getId(),
-                needsReview, PageRequest.of(0, 10)).getContent().stream().map(DocumentSummary::id).toList();
+                needsReview, null, false, PageRequest.of(0, 10)).getContent().stream().map(DocumentSummary::id).toList();
     }
 
     private Document scan(String name, AiStatus aiStatus, OcrStatus ocrStatus) {

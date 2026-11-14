@@ -542,6 +542,8 @@ const ACTION_LABELS = {
   PII_ORIGINAL_DENIED: 'Студентам закрыт оригинал',
   DOCUMENT_CATEGORY_SET: 'Тип документа указан вручную',
   OCR_RETRY_REQUESTED: 'Повторное распознавание скана',
+  DOCUMENT_WEEK_SET: 'Неделя документа',
+  COURSE_WEEKS_CHANGED: 'Изменение недель курса',
   ROLE_CHANGED: 'Смена роли',
   USER_DELETED: 'Удаление пользователя',
   DOCUMENT_CLASSIFIED: 'Классификация документа',
