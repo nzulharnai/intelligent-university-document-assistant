@@ -9,6 +9,7 @@ import com.university.docassistant.repository.DocumentRepository;
 import com.university.docassistant.repository.DocumentRepository.ClassificationSource;
 import com.university.docassistant.service.DocumentClassificationService.ClassificationResult;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -16,6 +17,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * Background AI classification of documents uploaded without a category (US-05), so an upload never waits for the
@@ -26,7 +28,9 @@ import java.util.Optional;
  *   <li>classify its stored text outside any transaction (the AI call can take a while);</li>
  *   <li>in one transaction: category and type, rule A (EXAM_ANSWERS -> TEACHER_ONLY), the stored AI result, DONE;
  *       or FAILED with category OTHER when the AI gave no answer;</li>
- *   <li>for SYLLABUS/ASSIGNMENT with text, the deadline analysis, synchronously in this same thread.</li>
+ *   <li>for SYLLABUS/ASSIGNMENT with text, the deadline analysis, synchronously in this same thread;</li>
+ *   <li>US-16, in this same thread: a syllabus gives the course's week plan, another document a week hint
+ *       (CourseWeekPlanService, never throws).</li>
  * </ol>
  * Students do not see the document until step 3 has committed (rule C, AccessControlService). Never throws: an
  * unexpected error marks the document FAILED in a new transaction.
@@ -43,6 +47,21 @@ public class DocumentProcessingService {
     private final DocumentOcrService ocrService;
     private final TransactionTemplate transaction;
     private final TransactionTemplate newTransaction;
+    /** US-16, after classification and analysis; a no-op without CourseWeekPlanService. */
+    private final Consumer<Long> weeksFollowUp;
+
+    @Autowired
+    public DocumentProcessingService(DocumentRepository documentRepository,
+                                     DocumentClassificationRepository classificationRepository,
+                                     DocumentClassificationService classificationService,
+                                     DocumentAnalysisService analysisService,
+                                     AuditService auditService,
+                                     PlatformTransactionManager transactionManager,
+                                     DocumentOcrService ocrService,
+                                     CourseWeekPlanService weekPlans) {
+        this(documentRepository, classificationRepository, classificationService, analysisService, auditService,
+                transactionManager, ocrService, weekPlans::afterDocumentProcessed);
+    }
 
     public DocumentProcessingService(DocumentRepository documentRepository,
                                      DocumentClassificationRepository classificationRepository,
@@ -51,6 +70,19 @@ public class DocumentProcessingService {
                                      AuditService auditService,
                                      PlatformTransactionManager transactionManager,
                                      DocumentOcrService ocrService) {
+        this(documentRepository, classificationRepository, classificationService, analysisService, auditService,
+                transactionManager, ocrService, id -> { });
+    }
+
+    private DocumentProcessingService(DocumentRepository documentRepository,
+                                      DocumentClassificationRepository classificationRepository,
+                                      DocumentClassificationService classificationService,
+                                      DocumentAnalysisService analysisService,
+                                      AuditService auditService,
+                                      PlatformTransactionManager transactionManager,
+                                      DocumentOcrService ocrService,
+                                      Consumer<Long> weeksFollowUp) {
+        this.weeksFollowUp = weeksFollowUp;
         this.documentRepository = documentRepository;
         this.classificationRepository = classificationRepository;
         this.classificationService = classificationService;
@@ -77,7 +109,17 @@ public class DocumentProcessingService {
     public void ocrAsync(Long documentId) {
         if (ocrService.runIfPending(documentId) == DocumentOcrService.Outcome.DONE) {
             analysisService.analyzeNow(documentId, true);
+            weeksFollowUp.accept(documentId);
         }
+    }
+
+    /**
+     * US-16 for a document that gets no other background job (a category picked by hand, no OCR, no deadline
+     * analysis): its week hint, or the plan of a syllabus. Throws TaskRejectedException when the AI queue is full.
+     */
+    @Async(AsyncConfig.AI_EXECUTOR)
+    public void weeksAsync(Long documentId) {
+        weeksFollowUp.accept(documentId);
     }
 
     /** Whether OCR can run on this server at all. */
@@ -131,6 +173,9 @@ public class DocumentProcessingService {
         // analyzeNow never throws and runs here, on the AI executor, instead of queueing another job.
         if (hasText && finalCategory != null && DocumentAnalysisService.AUTO_ANALYZED.contains(finalCategory)) {
             analysisService.analyzeNow(documentId, true);
+        }
+        if (hasText && finalCategory != null) {
+            weeksFollowUp.accept(documentId);
         }
     }
 

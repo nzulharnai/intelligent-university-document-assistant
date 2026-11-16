@@ -91,4 +91,17 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     @Modifying
     @Query("UPDATE Course c SET c.teacher = NULL WHERE c.teacher.id = :teacherId")
     int detachTeacher(@Param("teacherId") Long teacherId);
+
+    /** US-16: the course's weeks count; null when the course does not exist. */
+    @Query("SELECT c.weeksCount FROM Course c WHERE c.id = :id")
+    Integer findWeeksCount(@Param("id") Long id);
+
+    @Modifying
+    @Query("UPDATE Course c SET c.weeksCount = :weeksCount WHERE c.id = :id")
+    int setWeeksCount(@Param("id") Long id, @Param("weeksCount") int weeksCount);
+
+    /** A syllabus plan with more weeks raises the count, never lowers it. 1 when raised. */
+    @Modifying
+    @Query("UPDATE Course c SET c.weeksCount = :weeksCount WHERE c.id = :id AND c.weeksCount < :weeksCount")
+    int raiseWeeksCount(@Param("id") Long id, @Param("weeksCount") int weeksCount);
 }

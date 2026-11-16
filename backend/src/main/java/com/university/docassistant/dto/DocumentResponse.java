@@ -54,6 +54,10 @@ public record DocumentResponse(
          * A scan whose text is not recognized (yet): it is unknown whether it holds personal data, so a student gets
          * the original only when the teacher allowed it ("Скан не проверен на личные данные").
          */
-        boolean piiUnknown
+        boolean piiUnknown,
+        /** US-16: the confirmed course week, null for "Без недели". */
+        Integer weekNumber,
+        /** US-16: the week the AI suggests until the teacher accepts it; always null for a student. */
+        Integer suggestedWeek
 ) {
 }

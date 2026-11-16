@@ -37,12 +37,23 @@ public final class AssignmentDtos {
             /** Submissions after the deadline are accepted (marked late). */
             boolean allowLate,
             /** The highest grade, 1..1000; null when not graded with points. */
-            Integer maxScore
+            Integer maxScore,
+            /** US-16: the course week the assignment is in; null: "Без недели". */
+            Integer weekNumber
     ) {
+        /** Without a week (the shape before US-16 put assignments into weeks). */
+        public AssignmentResponse(Long id, String title, String description, LocalDateTime deadline,
+                                  AssignmentStatus status, Long courseId, String courseTitle, String courseCode,
+                                  Long sourceDocumentId, String sourceDocumentName, LocalDateTime createdAt,
+                                  boolean sourceAnalysisPartial, boolean allowLate, Integer maxScore) {
+            this(id, title, description, deadline, status, courseId, courseTitle, courseCode, sourceDocumentId,
+                    sourceDocumentName, createdAt, sourceAnalysisPartial, allowLate, maxScore, null);
+        }
+
         /** The same assignment showing {@code name} as its source document's name (US-09: masked for students). */
         public AssignmentResponse withSourceDocumentName(String name) {
             return new AssignmentResponse(id, title, description, deadline, status, courseId, courseTitle, courseCode,
-                    sourceDocumentId, name, createdAt, sourceAnalysisPartial, allowLate, maxScore);
+                    sourceDocumentId, name, createdAt, sourceAnalysisPartial, allowLate, maxScore, weekNumber);
         }
 
         /** Select list matching the canonical constructor; the queries alias Assignment as a, course as c. */
@@ -50,7 +61,7 @@ public final class AssignmentDtos {
                 SELECT new com.university.docassistant.dto.AssignmentDtos$AssignmentResponse(
                     a.id, a.title, a.requirements, a.deadline, a.status, c.id, c.title, c.code,
                     d.id, d.originalFileName, a.createdAt,
-                    COALESCE(d.aiExtractionPartial, false), a.allowLate, a.maxScore)
+                    COALESCE(d.aiExtractionPartial, false), a.allowLate, a.maxScore, a.weekNumber)
                 FROM Assignment a JOIN a.course c LEFT JOIN a.sourceDocument d
                 """;
     }

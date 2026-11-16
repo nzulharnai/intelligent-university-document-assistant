@@ -35,7 +35,8 @@ import java.time.LocalDateTime;
         @Index(name = "idx_documents_visibility", columnList = "visibility"),
         @Index(name = "idx_documents_owner_id", columnList = "owner_id"),
         @Index(name = "idx_documents_uploaded_at", columnList = "uploaded_at"),
-        @Index(name = "idx_documents_batch_import_id", columnList = "batch_import_id")
+        @Index(name = "idx_documents_batch_import_id", columnList = "batch_import_id"),
+        @Index(name = "idx_documents_course_week", columnList = "course_id, week_number")
 })
 @Getter
 @Setter
@@ -174,6 +175,23 @@ public class Document {
     @Column(name = "ai_extraction_partial", nullable = false)
     @ColumnDefault("false")
     private boolean aiExtractionPartial;
+
+    /**
+     * US-16: the course week the document belongs to, set or confirmed by the course teacher or ADMIN; null for "Без
+     * недели", a normal state. Students see only this one.
+     */
+    @Column(name = "week_number")
+    private Integer weekNumber;
+
+    /**
+     * US-16: the week the AI (or the file name) suggests, with its confidence 0..1. Only a hint for the teacher: it
+     * never moves the document until accepted, and a student never gets it. Cleared once a week is set.
+     */
+    @Column(name = "suggested_week")
+    private Integer suggestedWeek;
+
+    @Column(name = "suggested_week_confidence")
+    private Double suggestedWeekConfidence;
 
     /** The ZIP import the document came from; null for single and multi-file uploads. */
     @ManyToOne(fetch = FetchType.LAZY)

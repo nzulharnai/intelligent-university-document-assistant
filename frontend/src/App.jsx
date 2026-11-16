@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import { ALL_ROLES, ROLE_ADMIN, ROLE_TEACHER } from './constants/roles'
 import AdminPage from './pages/AdminPage'
 import AssignmentGradingPage from './pages/AssignmentGradingPage'
+import AssistantPage from './pages/AssistantPage'
 import AuthPage from './pages/AuthPage'
 import CoursePage from './pages/CoursePage'
 import JoinCoursePage from './pages/JoinCoursePage'
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="/courses/:id" element={<CoursePage />} />
               <Route path="/join/:code" element={<JoinCoursePage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/assistant" element={<AssistantPage />} />
             </Route>
             <Route element={<ProtectedRoute allowedRoles={[ROLE_TEACHER, ROLE_ADMIN]} />}>
               <Route path="/courses/:courseId/assignments/:id" element={<AssignmentGradingPage />} />

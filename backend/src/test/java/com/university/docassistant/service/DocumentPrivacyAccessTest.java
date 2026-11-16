@@ -241,9 +241,11 @@ class DocumentPrivacyAccessTest {
             DocumentChunkRepository chunks = mock(DocumentChunkRepository.class);
             AiClientService ai = mock(AiClientService.class);
             DocumentService viewable = mock(DocumentService.class);
-            DocumentQnaService qna = new DocumentQnaService(viewable, chunks, access, ai,
+            DocumentQnaService qna = new DocumentQnaService(viewable, chunks,
+                    mock(com.university.docassistant.repository.AssignmentRepository.class),
+                    mock(com.university.docassistant.repository.TaskRepository.class), access, ai,
                     new AiProperties(true, "k", "m", "http://x", Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 1, 1, 2, 1),
-                    privacy);
+                    privacy, java.time.Clock.systemUTC());
             document.setTextSnippet(DocumentParserService.snippet(document.getMaskedText()));
             when(viewable.getViewable(50L, "student@uni.kz")).thenReturn(document);
             when(ai.isConfigured()).thenReturn(true);
@@ -252,6 +254,8 @@ class DocumentPrivacyAccessTest {
             ChunkHit hit = new ChunkHit() {
                 public Long getDocumentId() { return 50L; }
                 public String getDocumentName() { return "Иванов_" + IIN + ".pdf"; }
+                public Long getCourseId() { return 1L; }
+                public String getCourseTitle() { return "Курс"; }
                 public Integer getChunkIndex() { return 0; }
                 public Integer getStartOffset() { return 0; }
                 public Integer getEndOffset() { return 60; }
@@ -305,15 +309,19 @@ class DocumentPrivacyAccessTest {
             DocumentChunkRepository chunks = mock(DocumentChunkRepository.class);
             AiClientService ai = mock(AiClientService.class);
             DocumentService viewable = mock(DocumentService.class);
-            DocumentQnaService qna = new DocumentQnaService(viewable, chunks, access, ai,
+            DocumentQnaService qna = new DocumentQnaService(viewable, chunks,
+                    mock(com.university.docassistant.repository.AssignmentRepository.class),
+                    mock(com.university.docassistant.repository.TaskRepository.class), access, ai,
                     new AiProperties(true, "k", "m", "http://x", Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 1, 1, 2, 1),
-                    privacy);
+                    privacy, java.time.Clock.systemUTC());
             when(viewable.getViewable(eq(50L), anyString())).thenReturn(document);
             when(ai.isConfigured()).thenReturn(true);
             when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("Ответ [" + NAME + ", фрагмент 1]"));
             ChunkHit hit = new ChunkHit() {
                 public Long getDocumentId() { return 50L; }
                 public String getDocumentName() { return NAME; }
+                public Long getCourseId() { return 1L; }
+                public String getCourseTitle() { return "Курс"; }
                 public Integer getChunkIndex() { return 0; }
                 public Integer getStartOffset() { return 0; }
                 public Integer getEndOffset() { return 60; }

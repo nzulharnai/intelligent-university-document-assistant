@@ -17,6 +17,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnDefault;
 
 /**
  * A course is the unit of access: its teacher manages it and its documents, its students (see {@link Enrollment})
@@ -33,6 +34,9 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Course {
+
+    public static final int DEFAULT_WEEKS = 15;
+    public static final int MAX_WEEKS = 30;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -54,6 +58,15 @@ public class Course {
      */
     @Column(name = "invite_code", length = 64)
     private String inviteCode;
+
+    /**
+     * US-16: how many weeks the course is split into, 1..{@value #MAX_WEEKS}. A syllabus plan with more weeks raises
+     * it (CourseWeekPlanService); the teacher changes it with PUT /courses/{id}/weeks.
+     */
+    @Column(name = "weeks_count", nullable = false)
+    @ColumnDefault("15")
+    @Builder.Default
+    private int weeksCount = DEFAULT_WEEKS;
 
     /** Null once the teacher's account is deleted. */
     @ManyToOne(fetch = FetchType.LAZY)

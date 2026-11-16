@@ -12,7 +12,8 @@ import DocumentAiBadge from '../components/DocumentAiBadge'
 import ReclassifyButton from '../components/ReclassifyButton'
 import { VISIBILITY_LABELS } from '../constants/documents'
 import { canDeleteDocument, formatSize, getFileFormat } from '../utils/fileTypes'
-import { hasProtectedOriginal, isOriginalRestricted, isPiiUnknown } from '../utils/privacy'
+import { hasProtectedOriginal, isOriginalRestricted, isPiiUnknown, managesDocument } from '../utils/privacy'
+import { parseFragmentRange } from '../utils/fragments'
 import DocumentTextPanel from '../components/DocumentTextPanel'
 import PiiBadge from '../components/PiiBadge'
 import SetCategoryDialog from '../components/SetCategoryDialog'
@@ -49,7 +50,23 @@ export default function DocumentPage() {
   const [confirm, confirmDialog] = useConfirm()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = TABS.some((item) => item.id === searchParams.get('tab')) ? searchParams.get('tab') : 'preview'
+  // A tab picked by hand drops the fragment (from, to) of a Q&A source from the address.
   const openTab = (tabId) => setSearchParams(tabId === 'preview' ? {} : { tab: tabId }, { replace: true, state: location.state })
+
+  // US-15: the fragment a Q&A source points at; its text comes in the router state of the link.
+  const rangeFrom = searchParams.get('from')
+  const rangeTo = searchParams.get('to')
+  const fragmentText = location.state?.fragmentText
+  const fragment = useMemo(() => {
+    const range = parseFragmentRange(new URLSearchParams({ from: rangeFrom ?? '', to: rangeTo ?? '' }))
+    return range && { ...range, text: typeof fragmentText === 'string' ? fragmentText : null }
+  }, [rangeFrom, rangeTo, fragmentText])
+  // "Показать в тексте" in the document's own chat; the chat stays mounted, so its history is kept.
+  const showSourceInText = (source) => setSearchParams(
+    { tab: 'text', from: String(source.startOffset), to: String(source.endOffset) },
+    { replace: true, state: { ...location.state, fragmentText: source.text } },
+  )
+  const clearFragment = () => openTab('text')
 
   const [doc, setDoc] = useState(null)
   const [error, setError] = useState(null) // { status, message }
@@ -165,9 +182,19 @@ export default function DocumentPage() {
 
             <div className="mt-6" role="tabpanel">
               {tab === 'preview' && <DocumentPreview doc={liveDoc} onShowText={() => openTab('text')} />}
-              {tab === 'text' && <DocumentTextPanel doc={liveDoc} />}
+              {tab === 'text' && (
+                <DocumentTextPanel
+                  doc={liveDoc}
+                  fragment={fragment}
+                  manages={managesDocument(liveDoc)}
+                  onClearFragment={clearFragment}
+                />
+              )}
               {tab === 'analysis' && <AnalysisPanel doc={liveDoc} />}
-              {tab === 'chat' && <DocumentChat doc={liveDoc} />}
+              {/* Kept mounted while the page is open (hidden on other tabs), so the conversation survives a look at the text. */}
+              <div hidden={tab !== 'chat'}>
+                <DocumentChat doc={liveDoc} onShowSource={showSourceInText} />
+              </div>
             </div>
           </>
         )}

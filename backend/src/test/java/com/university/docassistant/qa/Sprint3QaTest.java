@@ -198,8 +198,8 @@ class Sprint3QaTest {
     private final DocumentService documentService = new DocumentService(documents, taskRows, assignmentRows, access,
             storage, parser, analysis, ai, chunker, audit, classifier, executor, mock(BatchImportRepository.class),
             assignments, privacy);
-    private final DocumentQnaService qna = new DocumentQnaService(documentService, chunkRows, access, ai, AI_PROPERTIES,
-            privacy);
+    private final DocumentQnaService qna = new DocumentQnaService(documentService, chunkRows, assignmentRows, taskRows, access, ai,
+            AI_PROPERTIES, privacy, java.time.Clock.systemUTC());
 
     // In-memory tables.
     private final TreeMap<Long, Document> documentTable = new TreeMap<>();
@@ -369,6 +369,26 @@ class Sprint3QaTest {
             assertThat(forTeacher.text()).isEqualTo(SYLLABUS);
             // The document as listed to the student: snippet and metadata only, nothing personal.
             assertNoPersonalData(json(documentService.get(syllabus, STUDENT_EMAIL)));
+        }
+
+        @Test
+        @DisplayName("US-15: masked=true gives the teacher the masked copy, where Q&A fragment offsets point")
+        void maskedTextForTheTeacherMatchesTheFragmentOffsets() {
+            DocumentTextResponse forStudent = documentService.text(syllabus, STUDENT_EMAIL);
+            DocumentTextResponse maskedForTeacher = documentService.text(syllabus, TEACHER_EMAIL, true);
+
+            assertThat(maskedForTeacher.masked()).isTrue();
+            assertThat(maskedForTeacher.text()).isEqualTo(forStudent.text()).isNotEqualTo(SYLLABUS);
+            assertThat(maskedForTeacher.originalFileName()).isEqualTo("syllabus.txt");
+            assertThat(documentService.text(syllabus, TEACHER_EMAIL).text()).as("without the parameter").isEqualTo(SYLLABUS);
+            // The chunks were cut from exactly this text, so each fragment's offsets select its content.
+            String indexed = chunkTable.get(syllabus);
+            assertThat(indexed).isEqualTo(maskedForTeacher.text());
+            List<com.university.docassistant.service.DocumentChunker.Chunk> fragments =
+                    new com.university.docassistant.service.DocumentChunker().split(indexed);
+            assertThat(fragments).isNotEmpty().allSatisfy(fragment -> assertThat(
+                    maskedForTeacher.text().substring(fragment.startOffset(), fragment.endOffset()))
+                    .isEqualTo(fragment.content()));
         }
 
         @Test
@@ -835,6 +855,8 @@ class Sprint3QaTest {
             hits.add(new ChunkHit() {
                 public Long getDocumentId() { return id; }
                 public String getDocumentName() { return document.getOriginalFileName(); }
+                public Long getCourseId() { return 1L; }
+                public String getCourseTitle() { return "Курс"; }
                 public Integer getChunkIndex() { return 0; }
                 public Integer getStartOffset() { return 0; }
                 public Integer getEndOffset() { return content.length(); }

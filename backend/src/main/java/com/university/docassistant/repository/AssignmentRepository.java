@@ -34,6 +34,14 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
     @Query(AssignmentResponse.SELECT + "WHERE a.id = :id")
     Optional<AssignmentResponse> findViewById(@Param("id") Long id);
 
+    /** US-16: assignments per week of the course ([week or null, count]); students see all of a course's assignments. */
+    @Query("SELECT a.weekNumber, COUNT(a) FROM Assignment a WHERE a.course.id = :courseId GROUP BY a.weekNumber")
+    List<Object[]> countByWeek(@Param("courseId") Long courseId);
+
+    /** US-16: the highest week an assignment of the course is in; null when none has a week. */
+    @Query("SELECT MAX(a.weekNumber) FROM Assignment a WHERE a.course.id = :courseId")
+    Integer findMaxWeek(@Param("courseId") Long courseId);
+
     @Query("SELECT a FROM Assignment a WHERE a.sourceDocument.id = :documentId")
     List<Assignment> findBySourceDocumentId(@Param("documentId") Long documentId);
 
@@ -60,6 +68,67 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
 
     @Query("SELECT COUNT(a) FROM Assignment a WHERE a.sourceDocument.id = :documentId")
     long countBySourceDocumentId(@Param("documentId") Long documentId);
+
+    /** An ACTIVE assignment as the Q&A prompt lists it; {@code score} is the match of its title with the question. */
+    interface QnaAssignment {
+        Long getId();
+
+        Long getCourseId();
+
+        String getCourseTitle();
+
+        String getTitle();
+
+        LocalDateTime getDeadline();
+
+        Integer getMaxScore();
+
+        Boolean getAllowLate();
+
+        Double getScore();
+    }
+
+    /**
+     * Order of the Q&A block: titles sharing words with the question first (best match first), then upcoming
+     * deadlines (nearest first), then assignments without a deadline, then past deadlines (latest first).
+     * {@code query} is DocumentQnaService's to_tsquery expression, "" when the question has no words.
+     */
+    String QNA_ASSIGNMENTS_SELECT = """
+            SELECT a.id AS id, a.course_id AS courseId, c.title AS courseTitle, a.title AS title,
+                   a.deadline AS deadline, a.max_score AS maxScore, a.allow_late AS allowLate,
+                   CAST(CASE WHEN :query = '' THEN 0
+                        ELSE ts_rank_cd(to_tsvector('russian', a.title), to_tsquery('russian', :query)) END
+                        AS double precision) AS score
+            FROM assignments a JOIN courses c ON c.id = a.course_id
+            WHERE a.status = 'ACTIVE' AND
+            """;
+
+    String QNA_ASSIGNMENTS_ORDER = """
+            ORDER BY score DESC,
+                     CASE WHEN a.deadline >= :now THEN 0 WHEN a.deadline IS NULL THEN 1 ELSE 2 END,
+                     CASE WHEN a.deadline >= :now THEN a.deadline END ASC,
+                     a.deadline DESC, a.id
+            LIMIT :limit
+            """;
+
+    /**
+     * ACTIVE assignments of {@code courseIds} for the Q&A prompt. The caller takes the ids from
+     * AccessControlService.scope (or an authorized course), so assignments of other courses never reach the prompt.
+     * {@code courseIds} must not be empty.
+     */
+    @Query(value = QNA_ASSIGNMENTS_SELECT + "a.course_id IN (:courseIds)\n" + QNA_ASSIGNMENTS_ORDER, nativeQuery = true)
+    List<QnaAssignment> findForQnaInCourses(@Param("courseIds") Collection<Long> courseIds,
+                                            @Param("query") String query,
+                                            @Param("now") LocalDateTime now,
+                                            @Param("limit") int limit);
+
+    /** ACTIVE assignments found in one document, for a question about that document. */
+    @Query(value = QNA_ASSIGNMENTS_SELECT + "a.source_document_id = :documentId\n" + QNA_ASSIGNMENTS_ORDER,
+            nativeQuery = true)
+    List<QnaAssignment> findForQnaInDocument(@Param("documentId") Long documentId,
+                                             @Param("query") String query,
+                                             @Param("now") LocalDateTime now,
+                                             @Param("limit") int limit);
 
     @Query("SELECT a.course.id FROM Assignment a WHERE a.id = :id")
     Optional<Long> findCourseIdById(@Param("id") Long id);

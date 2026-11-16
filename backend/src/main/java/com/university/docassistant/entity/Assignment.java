@@ -85,6 +85,10 @@ public class Assignment {
     @Column(name = "max_score")
     private Integer maxScore;
 
+    /** US-16: the course week the assignment is shown in (1..Course.weeksCount); null: "Без недели". */
+    @Column(name = "week_number")
+    private Integer weekNumber;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

@@ -58,7 +58,10 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -395,6 +398,9 @@ public class DocumentService {
         } else if (extracted.text() != null && DocumentAnalysisService.AUTO_ANALYZED.contains(category)
                 && aiClientService.isConfigured()) {
             submitAnalysis(document.getId(), false);
+        } else if (extracted.text() != null) {
+            // US-16: no other job will look at it, so its week hint gets one of its own.
+            submitWeeks(document.getId());
         }
         // aiClassified stays false here: the AI has not chosen anything yet when the upload answers.
         return new UploadedDocument(toResponse(DocumentSummary.of(document), target.owner(), true), false);
@@ -422,6 +428,8 @@ public class DocumentService {
         if (document.getMaskedText() != null && DocumentAnalysisService.AUTO_ANALYZED.contains(category)
                 && aiClientService.isConfigured()) {
             afterCommit(() -> submitAnalysis(id, false));
+        } else if (document.getMaskedText() != null) {
+            afterCommit(() -> submitWeeks(id));
         }
         return get(id, email);
     }
@@ -482,6 +490,15 @@ public class DocumentService {
         }
     }
 
+    /** US-16: a full queue only leaves the document without a week hint ("Предложить недели" can ask again). */
+    private void submitWeeks(Long documentId) {
+        try {
+            documentProcessingService.weeksAsync(documentId);
+        } catch (TaskRejectedException ex) {
+            log.warn("Week suggestion of document {} not queued: {}", documentId, ex.getMessage());
+        }
+    }
+
     /** False when the AI queue is full: the document stays PENDING and AiProcessingRecovery queues it at the next start. */
     private boolean submitProcessing(Long documentId) {
         try {
@@ -539,9 +556,13 @@ public class DocumentService {
             return List.of();
         }
         Scope scope = access.scope(access.currentUser(email));
+        // US-16: a student learns nothing about documents in a week the teacher hid.
+        Set<Long> inHiddenWeeks = scope.includeTeacherOnly() ? Set.of()
+                : new HashSet<>(documentRepository.findIdsInHiddenWeeks(distinct));
         List<DocumentRepository.StatusRow> visible = documentRepository.findStatusRows(distinct).stream()
                 .filter(row -> AccessControlService.canView(scope, row.courseId(), row.visibility(), row.aiStatus(),
                         row.ocrStatus()))
+                .filter(row -> !inHiddenWeeks.contains(row.id()))
                 .toList();
         if (visible.isEmpty()) {
             return List.of();
@@ -699,6 +720,44 @@ public class DocumentService {
      */
     @Transactional(readOnly = true)
     public PageResponse<DocumentResponse> list(String email, Long courseId, boolean needsReview, Pageable pageable) {
+        return list(email, courseId, needsReview, null, pageable);
+    }
+
+    /**
+     * US-16 {@code week}: a week number (1..{@value Course#MAX_WEEKS}) keeps that confirmed week's documents, "none"
+     * those without a week; null or blank: any. Anything else is 400 WEEK_OUT_OF_RANGE. A student's list is filtered
+     * by the confirmed week only, like everything they see.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<DocumentResponse> list(String email, Long courseId, boolean needsReview, String week,
+                                               Pageable pageable) {
+        return list(email, courseId, needsReview, week, null, null, null, pageable);
+    }
+
+    /**
+     * US-16 AC-5: also only one {@code category} and only documents uploaded from {@code uploadedFrom} to
+     * {@code uploadedTo} (both days included; null: open). A start after the end is 400 INVALID_PARAMETER.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<DocumentResponse> list(String email, Long courseId, boolean needsReview, String week,
+                                               DocumentCategory category, LocalDate uploadedFrom,
+                                               LocalDate uploadedTo, Pageable pageable) {
+        if (uploadedFrom != null && uploadedTo != null && uploadedFrom.isAfter(uploadedTo)) {
+            throw ApiException.badRequest(ErrorCodes.INVALID_PARAMETER, "Дата «с» позже даты «по»");
+        }
+        LocalDateTime from = uploadedFrom == null ? DocumentRepository.NO_START : uploadedFrom.atStartOfDay();
+        LocalDateTime to = uploadedTo == null ? DocumentRepository.NO_END : uploadedTo.plusDays(1).atStartOfDay();
+        boolean anyCategory = category == null;
+        DocumentCategory categoryParam = anyCategory ? DocumentCategory.OTHER : category;
+        Integer weekNumber = null;
+        boolean noWeek = false;
+        if (week != null && !week.isBlank()) {
+            if (week.strip().equalsIgnoreCase("none")) {
+                noWeek = true;
+            } else {
+                weekNumber = CourseWeekService.parseWeek(week.strip());
+            }
+        }
         User user = access.currentUser(email);
         if (courseId != null) {
             access.authorizeCourse(user, courseId, needsReview ? Permission.MANAGE_COURSE : Permission.VIEW_COURSE);
@@ -706,12 +765,13 @@ public class DocumentService {
         Scope scope = access.scope(user);
         Page<DocumentSummary> documents;
         if (scope.allCourses()) {
-            documents = documentRepository.findAllSummaries(courseId, needsReview, pageable);
+            documents = documentRepository.findAllSummaries(courseId, needsReview, weekNumber, noWeek, anyCategory,
+                    categoryParam, from, to, pageable);
         } else if (scope.isEmpty()) {
             documents = Page.empty(pageable);
         } else {
             documents = documentRepository.findSummariesInCourses(scope.courseIds(), scope.includeTeacherOnly(),
-                    courseId, needsReview, pageable);
+                    courseId, needsReview, weekNumber, noWeek, anyCategory, categoryParam, from, to, pageable);
         }
         Set<Long> managed = managedCourseIds(user, scope);
         return PageResponse.of(documents.map(document -> toResponse(document, user, canDelete(document, user, managed))));
@@ -753,11 +813,22 @@ public class DocumentService {
      */
     @Transactional(readOnly = true)
     public DocumentTextResponse text(Long id, String email) {
+        return text(id, email, false);
+    }
+
+    /**
+     * {@code maskedRequested}: the masked copy for any role, the text Q&A fragments are cut from, so a source's
+     * offsets point into it (US-15). Without it the course teacher and ADMIN get the original, as before. The access
+     * check and the file name do not depend on it.
+     */
+    @Transactional(readOnly = true)
+    public DocumentTextResponse text(Long id, String email, boolean maskedRequested) {
         User user = access.currentUser(email);
         Document document = access.authorizeDocument(user, id, Permission.VIEW_DOCUMENT);
-        boolean original = access.can(user, document, Permission.MANAGE_COURSE);
+        boolean manages = access.can(user, document, Permission.MANAGE_COURSE);
+        boolean original = manages && !maskedRequested;
         String text = original ? document.getExtractedText() : maskedText(document);
-        return new DocumentTextResponse(document.getId(), fileName(document.getOriginalFileName(), original),
+        return new DocumentTextResponse(document.getId(), fileName(document.getOriginalFileName(), manages),
                 text != null, document.isTextTruncated(), text, !original, document.getPiiCount());
     }
 
@@ -905,7 +976,10 @@ public class DocumentService {
                 document.originalAllowedForStudents(),
                 document.ocrStatus(),
                 document.textFromOcr(),
-                privacyService.isPiiUnknown(document.contentType(), document.ocrStatus(), document.textSnippet()));
+                privacyService.isPiiUnknown(document.contentType(), document.ocrStatus(), document.textSnippet()),
+                document.weekNumber(),
+                // US-16: the AI's hint is for the course teacher and ADMIN only.
+                viewer.getRole() == Role.ROLE_STUDENT ? null : document.suggestedWeek());
     }
 
     // Keeps only the last path segment (browsers may send "C:\...\name.pdf") and bounds the length.

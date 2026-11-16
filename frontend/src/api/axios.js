@@ -138,6 +138,9 @@ export const CODE_MESSAGES = {
   // Courses
   COURSE_CREATE_FORBIDDEN: 'Создавать курсы могут только преподаватели и деканат.',
   COURSE_REQUIRED: 'Выберите курс: каждый документ принадлежит курсу',
+  WEEK_OUT_OF_RANGE: 'Такой недели нет в курсе. Выберите неделю из списка или измените число недель.',
+  WEEK_IN_USE: 'В неделях после нового числа есть документы или задания. Сначала перенесите их в другие недели.',
+  WEEK_NO_SUGGESTION: 'ИИ не предложил неделю для этого документа.',
   ENROLL_BY_LINK_ONLY: 'Записаться на курс можно только по ссылке-приглашению преподавателя.',
   INVITE_INVALID: 'Курс не найден. Ссылка неверна или больше не действует — попросите у преподавателя актуальную.',
   TOO_MANY_ATTEMPTS: (data) => `Слишком много попыток с неверным кодом. Попробуйте через ${minutesFrom(data, 10)} мин.`,
@@ -172,6 +175,10 @@ export const CODE_MESSAGES = {
   AI_QUEUE_FULL: 'Очередь ИИ-анализа заполнена. Попробуйте через минуту.',
   AI_NO_TEXT: 'В документе нет распознанного текста для анализа',
   AI_EXAM_ANSWERS_NOT_ANALYZED: 'Ответы к экзамену не анализируются на задания',
+  // The server's text says when the next question can be asked.
+  AI_QUESTION_LIMIT: (data) => data?.message || `Лимит вопросов к ИИ исчерпан. Попробуйте через ${minutesFrom(data, 60)} мин.`,
+  CONVERSATION_NOT_FOUND: 'Разговор не найден: возможно, он удалён.',
+  CONVERSATION_FULL: (data) => data?.message || 'В этом разговоре слишком много вопросов. Начните новый разговор.',
   // Requests
   VALIDATION_FAILED: 'Проверьте введённые данные',
   MALFORMED_REQUEST: 'Некорректные данные запроса',

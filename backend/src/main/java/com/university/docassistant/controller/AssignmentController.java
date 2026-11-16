@@ -3,6 +3,7 @@ package com.university.docassistant.controller;
 import com.university.docassistant.dto.AssignmentDtos.AssignmentResponse;
 import com.university.docassistant.dto.AssignmentDtos.CreateAssignmentRequest;
 import com.university.docassistant.dto.AssignmentDtos.UpdateAssignmentRequest;
+import com.university.docassistant.dto.CourseWeekDtos.SetDocumentWeekRequest;
 import com.university.docassistant.dto.PageResponse;
 import com.university.docassistant.service.AssignmentService;
 import com.university.docassistant.util.SortValidator;
@@ -61,6 +62,13 @@ public class AssignmentController {
     public AssignmentResponse update(@PathVariable Long id, @Valid @RequestBody UpdateAssignmentRequest request,
                                      @AuthenticationPrincipal UserDetails principal) {
         return assignmentService.update(id, request, principal.getUsername());
+    }
+
+    /** US-16: the assignment's week ({"week": n}) or "Без недели" ({"week": null}); MANAGE_ASSIGNMENTS on the course. */
+    @PatchMapping("/assignments/{id}/week")
+    public AssignmentResponse setWeek(@PathVariable Long id, @RequestBody SetDocumentWeekRequest request,
+                                      @AuthenticationPrincipal UserDetails principal) {
+        return assignmentService.setWeek(id, request.week(), principal.getUsername());
     }
 
     /** CLOSED -> ACTIVE; students who lack the task get it. MANAGE_ASSIGNMENTS on the course. */

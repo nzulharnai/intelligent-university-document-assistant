@@ -40,14 +40,18 @@ public record DocumentSummary(
         boolean originalAllowedForStudents,
         /** US-07: text recognition of a scan (null when none was needed), and whether the text came from it. */
         OcrStatus ocrStatus,
-        boolean textFromOcr
+        boolean textFromOcr,
+        /** US-16: the confirmed week and the AI's suggestion (DocumentService hides the latter from students). */
+        Integer weekNumber,
+        Integer suggestedWeek
 ) {
     /** Select list matching the canonical constructor; the queries alias Document as d, owner as o, course as c. */
     static final String SELECT = """
             SELECT new com.university.docassistant.repository.DocumentSummary(
                 d.id, d.originalFileName, d.contentType, d.fileSize, d.category, d.visibility, d.uploadedAt,
                 d.textSnippet, o.id, o.email, o.fullName, c.id, c.title, c.code, dc.categoryName, dc.confidenceScore,
-                d.aiStatus, d.piiCount, d.piiTypes, d.originalAllowedForStudents, d.ocrStatus, d.textFromOcr)
+                d.aiStatus, d.piiCount, d.piiTypes, d.originalAllowedForStudents, d.ocrStatus, d.textFromOcr,
+                d.weekNumber, d.suggestedWeek)
             FROM Document d JOIN d.owner o LEFT JOIN d.course c
                 LEFT JOIN DocumentClassification dc ON dc.document = d
             """;
@@ -82,6 +86,8 @@ public record DocumentSummary(
                 document.getPiiTypes(),
                 document.isOriginalAllowedForStudents(),
                 document.getOcrStatus(),
-                document.isTextFromOcr());
+                document.isTextFromOcr(),
+                document.getWeekNumber(),
+                document.getSuggestedWeek());
     }
 }

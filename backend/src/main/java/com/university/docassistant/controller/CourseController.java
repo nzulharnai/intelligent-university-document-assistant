@@ -15,6 +15,7 @@ import com.university.docassistant.dto.DocumentAnswerResponse;
 import com.university.docassistant.dto.DocumentQuestionRequest;
 import com.university.docassistant.dto.PageResponse;
 import com.university.docassistant.service.CourseService;
+import com.university.docassistant.service.AiConversationService;
 import com.university.docassistant.service.DocumentQnaService;
 import com.university.docassistant.service.DocumentService;
 import com.university.docassistant.util.SortValidator;
@@ -49,6 +50,7 @@ public class CourseController {
 
     private final CourseService courseService;
     private final DocumentQnaService documentQnaService;
+    private final AiConversationService conversationService;
     private final DocumentService documentService;
 
     @PostMapping
@@ -139,6 +141,7 @@ public class CourseController {
     public DocumentAnswerResponse ask(@PathVariable Long id,
                                       @Valid @RequestBody DocumentQuestionRequest request,
                                       @AuthenticationPrincipal UserDetails principal) {
-        return documentQnaService.askCourse(id, request.question(), principal.getUsername());
+        return conversationService.limited(principal.getUsername(),
+                () -> documentQnaService.askCourse(id, request.question(), principal.getUsername()));
     }
 }

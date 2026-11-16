@@ -86,7 +86,7 @@ public class AccessControlService {
      * The document if the user has {@code permission} on it; 404 when it does not exist, 403 otherwise.
      * Steps: (1) the user exists - done by {@link #currentUser}; (2) the role; (3) the document; (4) its course;
      * (5) the user's relation to that course; (6) the permission; (7) the document's visibility - for a student also
-     * that it is not hidden by {@link #isHiddenFromStudents}; (8) allow.
+     * that it is not hidden by {@link #isHiddenFromStudents} nor in a week the teacher hid; (8) allow.
      */
     public Document authorizeDocument(User user, Long documentId, Permission permission) {
         if (user.getRole() == null) {                                                    // 2
@@ -134,7 +134,17 @@ public class AccessControlService {
         }
         return user.getRole() != Role.ROLE_STUDENT                                       // 7
                 || (document.getVisibility() != DocumentVisibility.TEACHER_ONLY
-                    && !isHiddenFromStudents(document.getAiStatus(), document.getOcrStatus()));
+                    && !isHiddenFromStudents(document.getAiStatus(), document.getOcrStatus())
+                    && !inHiddenWeek(document));
+    }
+
+    /**
+     * US-16 AC-4: the document is in a week the course teacher hid from students. Only a document with a week can be;
+     * the repository queries repeat this in VISIBLE_TO_STUDENTS[_SQL].
+     */
+    private boolean inHiddenWeek(Document document) {
+        return document.getWeekNumber() != null && document.getId() != null
+                && documentRepository.isInHiddenWeek(document.getId());
     }
 
     /**
