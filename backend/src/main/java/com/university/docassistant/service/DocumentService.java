@@ -745,8 +745,10 @@ public class DocumentService {
         if (uploadedFrom != null && uploadedTo != null && uploadedFrom.isAfter(uploadedTo)) {
             throw ApiException.badRequest(ErrorCodes.INVALID_PARAMETER, "Дата «с» позже даты «по»");
         }
-        LocalDateTime from = uploadedFrom == null ? null : uploadedFrom.atStartOfDay();
-        LocalDateTime to = uploadedTo == null ? null : uploadedTo.plusDays(1).atStartOfDay();
+        LocalDateTime from = uploadedFrom == null ? DocumentRepository.NO_START : uploadedFrom.atStartOfDay();
+        LocalDateTime to = uploadedTo == null ? DocumentRepository.NO_END : uploadedTo.plusDays(1).atStartOfDay();
+        boolean anyCategory = category == null;
+        DocumentCategory categoryParam = anyCategory ? DocumentCategory.OTHER : category;
         Integer weekNumber = null;
         boolean noWeek = false;
         if (week != null && !week.isBlank()) {
@@ -763,13 +765,13 @@ public class DocumentService {
         Scope scope = access.scope(user);
         Page<DocumentSummary> documents;
         if (scope.allCourses()) {
-            documents = documentRepository.findAllSummaries(courseId, needsReview, weekNumber, noWeek, category, from,
-                    to, pageable);
+            documents = documentRepository.findAllSummaries(courseId, needsReview, weekNumber, noWeek, anyCategory,
+                    categoryParam, from, to, pageable);
         } else if (scope.isEmpty()) {
             documents = Page.empty(pageable);
         } else {
             documents = documentRepository.findSummariesInCourses(scope.courseIds(), scope.includeTeacherOnly(),
-                    courseId, needsReview, weekNumber, noWeek, category, from, to, pageable);
+                    courseId, needsReview, weekNumber, noWeek, anyCategory, categoryParam, from, to, pageable);
         }
         Set<Long> managed = managedCourseIds(user, scope);
         return PageResponse.of(documents.map(document -> toResponse(document, user, canDelete(document, user, managed))));

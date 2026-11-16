@@ -299,4 +299,40 @@ class AssignmentEditTest {
             verify(assignments, never()).deleteAllByIdInBatch(any());
         }
     }
+
+    /** US-16 AC-1: the teacher moves an assignment between the weeks of the course. */
+    @Nested
+    class Week {
+
+        @Test
+        void theTeacherPutsAnAssignmentIntoAWeekAndTakesItOut() {
+            service.setWeek(1L, 4, "teacher@uni.kz");
+            assertThat(lab.getWeekNumber()).isEqualTo(4);
+            // Placed by the teacher: a re-analysis of its document still recognizes it.
+            assertThat(lab.getAiMatchKey()).isNotNull();
+            verify(audit).record(eq("teacher@uni.kz"), eq(AuditService.ASSIGNMENT_WEEK_SET), contains("no week -> week 4"));
+
+            service.setWeek(1L, null, "teacher@uni.kz");
+            assertThat(lab.getWeekNumber()).isNull();
+            verify(audit).record(eq("teacher@uni.kz"), eq(AuditService.ASSIGNMENT_WEEK_SET), contains("week 4 -> no week"));
+            // Students' tasks are not touched.
+            verify(tasks, never()).syncWithAssignments(any());
+        }
+
+        @Test
+        void aWeekOutsideTheCourseIsRefused() {
+            assertThatThrownBy(() -> service.setWeek(1L, 16, "teacher@uni.kz"))
+                    .isInstanceOfSatisfying(ApiException.class,
+                            ex -> assertThat(ex.getCode()).isEqualTo(ErrorCodes.WEEK_OUT_OF_RANGE));
+            assertThatThrownBy(() -> service.setWeek(1L, 0, "teacher@uni.kz")).isInstanceOf(ApiException.class);
+            assertThat(lab.getWeekNumber()).isNull();
+        }
+
+        @Test
+        void onlyTheCourseTeacherMovesIt() {
+            assertStatus(() -> service.setWeek(1L, 2, "student@uni.kz"), HttpStatus.FORBIDDEN);
+            assertStatus(() -> service.setWeek(1L, 2, "other@uni.kz"), HttpStatus.FORBIDDEN);
+            assertThat(lab.getWeekNumber()).isNull();
+        }
+    }
 }

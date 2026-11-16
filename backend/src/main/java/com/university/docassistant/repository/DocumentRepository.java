@@ -73,14 +73,17 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     String WEEK_FILTER = "(:week IS NULL OR d.weekNumber = :week) AND (:noWeek = FALSE OR d.weekNumber IS NULL)";
 
     /**
-     * US-16 AC-5: {@code category} keeps one category (null: any); {@code uploadedFrom} (inclusive) and
-     * {@code uploadedTo} (exclusive) bound the upload time (null: open).
+     * US-16 AC-5: {@code category} keeps one category unless {@code anyCategory}; {@code uploadedFrom} (inclusive)
+     * and {@code uploadedTo} (exclusive) bound the upload time. No parameter is ever null: PostgreSQL cannot type a
+     * null enum or timestamp in "? IS NULL", so "any" is a flag and open dates are {@link #NO_START} / {@link #NO_END}.
      */
     String CATEGORY_DATE_FILTER = """
-            (:category IS NULL OR d.category = :category)
-            AND (:uploadedFrom IS NULL OR d.uploadedAt >= :uploadedFrom)
-            AND (:uploadedTo IS NULL OR d.uploadedAt < :uploadedTo)
+            (:anyCategory = TRUE OR d.category = :category)
+            AND d.uploadedAt >= :uploadedFrom AND d.uploadedAt < :uploadedTo
             """;
+
+    LocalDateTime NO_START = LocalDateTime.of(1, 1, 1, 0, 0);
+    LocalDateTime NO_END = LocalDateTime.of(9999, 12, 31, 0, 0);
 
     /** For ADMIN: every document; {@code courseId} null means all of them. */
     @Query(value = DocumentSummary.SELECT + "WHERE (:courseId IS NULL OR c.id = :courseId) AND " + NEEDS_REVIEW
@@ -91,6 +94,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                                            @Param("needsReview") boolean needsReview,
                                            @Param("week") Integer week,
                                            @Param("noWeek") boolean noWeek,
+                                           @Param("anyCategory") boolean anyCategory,
                                            @Param("category") DocumentCategory category,
                                            @Param("uploadedFrom") LocalDateTime uploadedFrom,
                                            @Param("uploadedTo") LocalDateTime uploadedTo,
@@ -118,6 +122,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                                                  @Param("needsReview") boolean needsReview,
                                                  @Param("week") Integer week,
                                                  @Param("noWeek") boolean noWeek,
+                                                 @Param("anyCategory") boolean anyCategory,
                                                  @Param("category") DocumentCategory category,
                                                  @Param("uploadedFrom") LocalDateTime uploadedFrom,
                                                  @Param("uploadedTo") LocalDateTime uploadedTo,
@@ -126,15 +131,16 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     /** {@link #findAllSummaries} without the category and date filters. */
     default Page<DocumentSummary> findAllSummaries(Long courseId, boolean needsReview, Integer week, boolean noWeek,
                                                    Pageable pageable) {
-        return findAllSummaries(courseId, needsReview, week, noWeek, null, null, null, pageable);
+        return findAllSummaries(courseId, needsReview, week, noWeek, true, DocumentCategory.OTHER, NO_START, NO_END,
+                pageable);
     }
 
     /** {@link #findSummariesInCourses} without the category and date filters. */
     default Page<DocumentSummary> findSummariesInCourses(Collection<Long> courseIds, boolean includeTeacherOnly,
                                                          Long courseId, boolean needsReview, Integer week,
                                                          boolean noWeek, Pageable pageable) {
-        return findSummariesInCourses(courseIds, includeTeacherOnly, courseId, needsReview, week, noWeek, null, null,
-                null, pageable);
+        return findSummariesInCourses(courseIds, includeTeacherOnly, courseId, needsReview, week, noWeek, true,
+                DocumentCategory.OTHER, NO_START, NO_END, pageable);
     }
 
     @Query(DocumentSummary.SELECT + "WHERE d.id IN :ids")
