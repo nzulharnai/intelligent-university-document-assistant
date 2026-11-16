@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, Bot, CalendarClock, ChevronDown, ClipboardList, FileText, GraduationCap, Info, ListChecks, Loader2, Quote, RotateCw, SendHorizontal, Sparkles, TextSearch, User } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Bot, CalendarClock, ChevronDown, ClipboardList, FileText, GraduationCap, Info, ListChecks, Loader2, Quote, RotateCw, SearchX, SendHorizontal, Sparkles, TextSearch, User } from 'lucide-react'
 import api, { describeError } from '../api/axios'
 import { useToast } from '../context/ToastContext'
 import useAiStatus from '../hooks/useAiStatus'
@@ -29,10 +29,22 @@ const TASK_STATE_LABELS = {
   CLOSED: 'Задание закрыто',
 }
 
+// The saved conversation is gone or full: the next question starts a new one.
+const CONVERSATION_RESET_CODES = new Set(['CONVERSATION_NOT_FOUND', 'CONVERSATION_FULL'])
+
+/** The turns of a saved conversation (GET /ai/conversations/{id}) as chat messages. */
+function messagesOf(turns) {
+  return (turns ?? []).flatMap((turn) => [
+    { id: `q${turn.id}`, role: 'user', text: turn.question },
+    { id: `a${turn.id}`, role: 'assistant', question: turn.question, ...turn.answer },
+  ])
+}
+
 /**
  * Q&A chat over a document or a course (RAG). Answers cite fragments as [n] and the course's current assignments as
- * [задание N]; clicking a citation opens that fragment or points at that assignment. History lives only while the
- * component is mounted.
+ * [задание N]; clicking a citation opens that fragment or points at that assignment. POST /ai/ask saves every
+ * question in a conversation (US-14): the chat sends its conversationId back, so later questions continue it and the
+ * model understands follow-ups. Other endpoints (the document chat) keep the history only while mounted.
  *
  * @param endpoint   POST endpoint taking { question } and returning { answer, hasAnswer, sources, assignments,
  *                   citedExplicitly }
@@ -40,14 +52,18 @@ const TASK_STATE_LABELS = {
  * @param showDocuments  show which document and course each source comes from (course and global chats)
  * @param disabledReason when set, the input is disabled and this text is shown instead
  * @param sourceAction   optional (source) => element shown under an opened source, e.g. "Показать в тексте"
+ * @param conversation   optional saved conversation to continue: { id, turns } (remount the chat to switch)
+ * @param onConversation optional (id) => called when the backend saved the first question in a new conversation
+ * @param onAnswered     optional () => called after every answer (e.g. to refresh the history or the limits)
  */
 export default function AiChat({
   endpoint, courseId, title, subtitle, placeholder, suggestions = [], showDocuments = false, disabledReason,
-  sourceAction,
+  sourceAction, conversation, onConversation, onAnswered,
 }) {
   const aiAvailable = useAiStatus()
   const { notifyError } = useToast()
-  const [messages, setMessages] = useState([])
+  const [messages, setMessages] = useState(() => messagesOf(conversation?.turns))
+  const [conversationId, setConversationId] = useState(conversation?.id ?? null)
   const [question, setQuestion] = useState('')
   const [loading, setLoading] = useState(false)
   const scrollRef = useRef(null)
@@ -64,14 +80,22 @@ export default function AiChat({
   const send = async (trimmed, id) => {
     setLoading(true)
     try {
-      const body = courseId == null ? { question: trimmed } : { question: trimmed, courseId }
+      const body = { question: trimmed }
+      if (courseId != null) body.courseId = courseId
+      if (conversationId != null) body.conversationId = conversationId
       const { data } = await api.post(endpoint, body, { timeout: ASK_TIMEOUT_MS })
       setMessages((current) => [...current, { id: id + 1, role: 'assistant', question: trimmed, ...data }])
+      if (data.conversationId != null && data.conversationId !== conversationId) {
+        setConversationId(data.conversationId)
+        onConversation?.(data.conversationId)
+      }
+      onAnswered?.()
       // A question put back into the input after a failure is answered now; clear it unless the user edited it.
       setQuestion((current) => (current.trim() === trimmed ? '' : current))
     } catch (err) {
       const { status, message } = describeError(err)
       if (status === 503 || status === 403) notifyError(err)
+      if (CONVERSATION_RESET_CODES.has(err?.response?.data?.code)) setConversationId(null)
       setMessages((current) => [...current, { id: id + 1, role: 'error', text: message, status, question: trimmed }])
       // Keep the question: put it back if the input is still empty (the user may have started typing another one).
       setQuestion((current) => (current.trim() ? current : trimmed))
@@ -300,6 +324,12 @@ function AnswerBubble({ message, showDocuments, sourceAction }) {
     <div className="flex gap-2">
       <AssistantAvatar />
       <div className="min-w-0 max-w-[85%] flex-1">
+        {!message.hasAnswer && (
+          // US-15 AC-4: an answer the documents do not hold is marked as such, not dressed up as an answer.
+          <p className="mb-1 inline-flex items-center gap-1.5 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-fg">
+            <SearchX className="h-3 w-3" aria-hidden="true" /> Не найдено в документах
+          </p>
+        )}
         <div className={`rounded-card rounded-tl-sm border px-4 py-2.5 text-sm leading-6 ${
           message.hasAnswer
             ? 'border-line bg-page-alt text-fg'

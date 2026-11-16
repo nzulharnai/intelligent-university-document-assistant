@@ -544,6 +544,7 @@ const ACTION_LABELS = {
   OCR_RETRY_REQUESTED: 'Повторное распознавание скана',
   DOCUMENT_WEEK_SET: 'Неделя документа',
   COURSE_WEEKS_CHANGED: 'Изменение недель курса',
+  ASSIGNMENT_WEEK_SET: 'Неделя задания',
   ROLE_CHANGED: 'Смена роли',
   USER_DELETED: 'Удаление пользователя',
   DOCUMENT_CLASSIFIED: 'Классификация документа',

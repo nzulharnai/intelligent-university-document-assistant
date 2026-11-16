@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, CalendarRange, Check, ChevronDown, FileText, FolderOpen, List, Loader2, Pencil, Settings2, Sparkles, Upload, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { AlertTriangle, CalendarClock, CalendarRange, Check, ChevronDown, ClipboardList, Eye, EyeOff, FileText, Filter, FolderOpen, List, Loader2, Pencil, Settings2, Sparkles, Upload, X } from 'lucide-react'
 import api, { describeError } from '../api/axios'
+import { CATEGORY_OPTIONS } from '../constants/documents'
 import { useToast } from '../context/ToastContext'
+import { formatDateTime } from '../utils/dates'
 import useDocumentStatus from '../hooks/useDocumentStatus'
 import { isClassifying, withLiveStatus } from '../utils/documentStatus'
 import { pluralRu } from '../utils/plural'
@@ -22,6 +25,16 @@ const SUGGEST_POLL_MS = 4_000
 const SUGGEST_POLL_LIMIT_MS = 120_000
 
 const documentsWord = (count) => pluralRu(count, 'документ', 'документа', 'документов')
+const assignmentsWord = (count) => pluralRu(count, 'задание', 'задания', 'заданий')
+// US-16: the assignments shown inside the weeks; a course rarely has more.
+const WEEK_ASSIGNMENTS_SIZE = 100
+const NO_FILTERS = { category: '', from: '', to: '' }
+
+/** The filters as GET /documents params (only those set); null while the dates are the wrong way round. */
+function filterParams(filters) {
+  if (filters.from && filters.to && filters.from > filters.to) return null
+  return Object.fromEntries(Object.entries(filters).filter(([, value]) => value))
+}
 
 /**
  * The course's documents, "По неделям" (US-16) or "Списком" (as before). The teacher and ADMIN also get "Требуют
@@ -38,6 +51,8 @@ export default function CourseDocuments({ courseId, canManage, version }) {
   const [reviewCount, setReviewCount] = useState(null)
   const [sectionsVersion, setSectionsVersion] = useState(0)
   const [listTotal, setListTotal] = useState(null) // "Списком": the count next to the title, as before
+  const [filters, setFilters] = useState(NO_FILTERS) // US-16 AC-5: category and upload dates
+  const filtering = Boolean(filters.category || filters.from || filters.to)
 
   const reloadOverview = useCallback(() => setOverviewVersion((value) => value + 1), [])
   // A week changed: the counters, and the opened sections that may have gained or lost the document.
@@ -52,7 +67,7 @@ export default function CourseDocuments({ courseId, canManage, version }) {
       .then(({ data }) => {
         if (cancelled) return
         setOverview(data)
-        setView((current) => current ?? (data.weeks.some((week) => week.topic || week.documentCount > 0) ? 'weeks' : 'list'))
+        setView((current) => current ?? (data.weeks.some((week) => week.topic || week.documentCount > 0 || week.assignmentCount > 0) ? 'weeks' : 'list'))
       })
       .catch((err) => {
         if (cancelled) return
@@ -81,7 +96,8 @@ export default function CourseDocuments({ courseId, canManage, version }) {
     setView('list') // The documents to check are shown as a list.
   }
 
-  const effectiveView = reviewOnly || !overview ? 'list' : view
+  // Filtered documents are shown as one list: the week sections count all of a week's documents.
+  const effectiveView = reviewOnly || filtering || !overview ? 'list' : view
   const weeksCount = canManage ? overview?.weeksCount : undefined
 
   return (
@@ -89,7 +105,7 @@ export default function CourseDocuments({ courseId, canManage, version }) {
       <div className="flex flex-wrap items-center gap-2 border-b border-line-subtle px-5 py-4 sm:px-6">
         <h2 className="mr-auto flex items-center gap-2 text-base font-semibold text-fg">
           <FileText className="h-4.5 w-4.5 text-primary" aria-hidden="true" /> Документы курса
-          {effectiveView === 'list' && !reviewOnly && listTotal != null && (
+          {effectiveView === 'list' && !reviewOnly && !filtering && listTotal != null && (
             <span className="rounded-full bg-page-alt px-2 py-0.5 text-xs font-semibold tabular-nums text-fg-secondary">{listTotal}</span>
           )}
         </h2>
@@ -108,13 +124,14 @@ export default function CourseDocuments({ courseId, canManage, version }) {
             {reviewOnly && <X className="h-3.5 w-3.5" aria-hidden="true" />}
           </button>
         )}
-        {overview && !reviewOnly && (
+        {overview && !reviewOnly && !filtering && (
           <div role="group" aria-label="Вид списка документов" className="flex rounded-control border border-line bg-page-alt p-0.5">
             <ViewButton active={effectiveView === 'weeks'} icon={CalendarRange} onClick={() => setView('weeks')}>По неделям</ViewButton>
             <ViewButton active={effectiveView === 'list'} icon={List} onClick={() => setView('list')}>Списком</ViewButton>
           </div>
         )}
       </div>
+      {!reviewOnly && <DocumentFilters filters={filters} onChange={setFilters} />}
       {view === null ? (
         <ListSkeleton />
       ) : effectiveView === 'weeks' ? (
@@ -130,6 +147,7 @@ export default function CourseDocuments({ courseId, canManage, version }) {
         <DocumentsList
           courseId={courseId}
           reviewOnly={reviewOnly}
+          filters={reviewOnly ? NO_FILTERS : filters}
           version={version}
           weeksCount={weeksCount}
           onWeekChanged={reloadOverview}
@@ -235,11 +253,60 @@ function usePagedDocuments(params, reloadKey, enabled = true) {
   return { page, rows, loading, error, retry, updateDoc, loadMore }
 }
 
-/** "Списком": the documents as before, newest first, 10 at a time. */
-function DocumentsList({ courseId, reviewOnly, version, weeksCount, onWeekChanged, onTotal }) {
-  const params = useMemo(() => ({ courseId, size: DOCS_PAGE_SIZE, ...(reviewOnly ? { needsReview: true } : {}) }),
-    [courseId, reviewOnly])
-  const { page, rows, loading, error, retry, updateDoc, loadMore } = usePagedDocuments(params, version)
+/**
+ * US-16 AC-5: category and upload dates ("с" and "по", both days included). While any is set the documents are one
+ * list; "Сбросить" clears them.
+ */
+function DocumentFilters({ filters, onChange }) {
+  const categoryId = useId()
+  const fromId = useId()
+  const toId = useId()
+  const errorId = useId()
+  const set = (key) => (event) => onChange({ ...filters, [key]: event.target.value })
+  const active = Boolean(filters.category || filters.from || filters.to)
+  const wrongOrder = filterParams(filters) === null
+  const smallControl = 'h-8 rounded-control border border-line-strong bg-surface px-2 text-xs text-fg outline-none transition focus:border-primary focus:ring-4 focus:ring-ring'
+
+  return (
+    <div role="group" aria-label="Фильтр документов" className="flex flex-wrap items-end gap-x-3 gap-y-2 border-b border-line-subtle px-5 py-3 sm:px-6">
+      <Filter className="mb-2 h-3.5 w-3.5 text-fg-muted" aria-hidden="true" />
+      <div className="flex flex-col gap-1">
+        <label htmlFor={categoryId} className="text-[11px] font-medium text-fg-muted">Категория</label>
+        <select id={categoryId} value={filters.category} onChange={set('category')} className={smallControl}>
+          <option value="">Все категории</option>
+          {CATEGORY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor={fromId} className="text-[11px] font-medium text-fg-muted">Загружены с</label>
+        <input id={fromId} type="date" value={filters.from} max={filters.to || undefined} onChange={set('from')}
+          aria-invalid={wrongOrder || undefined} aria-describedby={wrongOrder ? errorId : undefined} className={smallControl} />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor={toId} className="text-[11px] font-medium text-fg-muted">по</label>
+        <input id={toId} type="date" value={filters.to} min={filters.from || undefined} onChange={set('to')}
+          aria-invalid={wrongOrder || undefined} aria-describedby={wrongOrder ? errorId : undefined} className={smallControl} />
+      </div>
+      {active && (
+        <Button size="sm" variant="ghost" icon={X} onClick={() => onChange(NO_FILTERS)}>Сбросить</Button>
+      )}
+      {wrongOrder && <p id={errorId} role="alert" className="w-full text-xs text-danger-fg">Дата «с» позже даты «по».</p>}
+    </div>
+  )
+}
+
+/** "Списком": the documents as before, newest first, 10 at a time; {@code filters} narrow them (US-16 AC-5). */
+function DocumentsList({ courseId, reviewOnly, filters, version, weeksCount, onWeekChanged, onTotal }) {
+  const filter = filterParams(filters)
+  const filtered = filter !== null && Object.keys(filter).length > 0
+  const filterKey = JSON.stringify(filter ?? {})
+  const params = useMemo(() => ({
+    courseId,
+    size: DOCS_PAGE_SIZE,
+    ...(reviewOnly ? { needsReview: true } : {}),
+    ...JSON.parse(filterKey),
+  }), [courseId, reviewOnly, filterKey])
+  const { page, rows, loading, error, retry, updateDoc, loadMore } = usePagedDocuments(params, version, filter !== null)
   const total = page?.totalElements ?? null
   useEffect(() => {
     onTotal?.(total)
@@ -253,7 +320,9 @@ function DocumentsList({ courseId, reviewOnly, version, weeksCount, onWeekChange
         <EmptyState
           compact
           icon={FolderOpen}
-          title={reviewOnly ? 'Документов, которые требуют проверки, нет.' : 'Доступных вам документов в курсе пока нет.'}
+          title={reviewOnly
+            ? 'Документов, которые требуют проверки, нет.'
+            : filtered ? 'По фильтру ничего не найдено.' : 'Доступных вам документов в курсе пока нет.'}
         />
       </div>
     )
@@ -289,6 +358,12 @@ function DocumentsList({ courseId, reviewOnly, version, weeksCount, onWeekChange
  */
 function WeeksView({ courseId, canManage, overview, onOverviewChanged, onWeeksChanged, sectionsVersion }) {
   const { notifyError, showSuccess } = useToast()
+  const [assignmentsVersion, setAssignmentsVersion] = useState(0)
+  const assignments = useWeekAssignments(courseId, `${sectionsVersion}|${assignmentsVersion}`)
+  const assignmentsChanged = useCallback(() => {
+    setAssignmentsVersion((value) => value + 1)
+    onOverviewChanged()
+  }, [onOverviewChanged])
   const [confirmAccept, setConfirmAccept] = useState(false)
   const [accepting, setAccepting] = useState(false)
   const [suggesting, setSuggesting] = useState(false)
@@ -338,10 +413,12 @@ function WeeksView({ courseId, canManage, overview, onOverviewChanged, onWeeksCh
 
   const pending = overview.pendingSuggestions ?? 0
   const hasPlan = overview.weeks.some((week) => week.topic)
+  const withoutWeekAssignments = overview.withoutWeekAssignmentCount ?? 0
   const sections = [
     ...overview.weeks.map((week) => ({ key: week.week, week })),
-    ...(overview.withoutWeekCount > 0 || canManage ? [{ key: 'none', week: null }] : []),
+    ...(overview.withoutWeekCount > 0 || withoutWeekAssignments > 0 || canManage ? [{ key: 'none', week: null }] : []),
   ]
+  const assignmentsOf = (week) => (assignments ?? []).filter((item) => (item.weekNumber ?? null) === (week ? week.week : null))
 
   return (
     <div>
@@ -384,11 +461,14 @@ function WeeksView({ courseId, canManage, overview, onOverviewChanged, onWeeksCh
               courseId={courseId}
               week={week}
               count={week ? week.documentCount : overview.withoutWeekCount}
+              assignmentCount={week ? (week.assignmentCount ?? 0) : withoutWeekAssignments}
+              assignments={assignments === null ? null : assignmentsOf(week)}
               canManage={canManage}
               weeksCount={canManage ? overview.weeksCount : undefined}
               reloadKey={sectionsVersion}
               onTopicSaved={onOverviewChanged}
               onWeekChanged={onWeeksChanged}
+              onAssignmentsChanged={assignmentsChanged}
             />
           ))}
         </ul>
@@ -421,18 +501,57 @@ function WeeksView({ courseId, canManage, overview, onOverviewChanged, onWeeksCh
   )
 }
 
-function WeekSection({ courseId, week, count, canManage, weeksCount, reloadKey, onTopicSaved, onWeekChanged }) {
+/**
+ * The course's assignments for the weeks view (US-16 AC-1): one request, grouped by week on the client. null while
+ * loading; on failure the weeks still show their documents, without assignments.
+ */
+function useWeekAssignments(courseId, reloadKey) {
+  // The previous list stays while a reload runs, so the sections do not flicker.
+  const [items, setItems] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    api.get(`/courses/${courseId}/assignments`, { params: { size: WEEK_ASSIGNMENTS_SIZE } })
+      .then(({ data }) => !cancelled && setItems(data.content))
+      .catch(() => !cancelled && setItems([]))
+    return () => {
+      cancelled = true
+    }
+  }, [courseId, reloadKey])
+  return items
+}
+
+function WeekSection({
+  courseId, week, count, assignmentCount, assignments, canManage, weeksCount, reloadKey, onTopicSaved, onWeekChanged,
+  onAssignmentsChanged,
+}) {
+  const { notifyError, showSuccess } = useToast()
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [togglingHidden, setTogglingHidden] = useState(false)
   const panelId = useId()
   const params = useMemo(() => ({ courseId, week: week ? week.week : 'none', size: WEEK_PAGE_SIZE }), [courseId, week])
   const { page, rows, loading, error, retry, updateDoc, loadMore } = usePagedDocuments(params, reloadKey, open)
-  const empty = count === 0
+  const empty = count === 0 && assignmentCount === 0
+  const hidden = Boolean(week?.hidden)
   const title = week ? `Неделя ${week.week}` : 'Без недели'
+
+  // US-16 AC-4: hide the week (and its documents) from students, or show it again.
+  const toggleHidden = async () => {
+    setTogglingHidden(true)
+    try {
+      await api.put(`/courses/${courseId}/weeks/${week.week}/visibility`, { hidden: !hidden })
+      showSuccess(hidden ? `Неделя ${week.week} снова видна студентам` : `Неделя ${week.week} скрыта от студентов`)
+      onTopicSaved()
+    } catch (err) {
+      notifyError(err)
+    } finally {
+      setTogglingHidden(false)
+    }
+  }
 
   return (
     <li>
-      <div className={`flex items-center gap-1 pr-3 ${empty ? 'text-fg-muted' : 'text-fg'}`}>
+      <div className={`flex items-center gap-1 pr-3 ${empty || hidden ? 'text-fg-muted' : 'text-fg'} ${hidden ? 'bg-page-alt/60' : ''}`}>
         {editing ? (
           <TopicEditor
             courseId={courseId}
@@ -453,25 +572,66 @@ function WeekSection({ courseId, week, count, canManage, weeksCount, reloadKey, 
             <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
             <span className={`min-w-0 flex-1 break-words text-sm ${empty ? 'font-normal' : 'font-semibold'}`}>
               {title}{week?.topic ? <span className="font-normal text-fg-secondary"> · {week.topic}</span> : null}
+              {hidden && (
+                <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 align-middle text-[11px] font-medium text-warning-fg">
+                  <EyeOff className="h-3 w-3" aria-hidden="true" /> Скрыта от студентов
+                </span>
+              )}
             </span>
-            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${empty ? 'bg-page-alt text-fg-muted' : 'bg-primary-soft text-primary-fg'}`}>
+            {assignmentCount > 0 && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-xs font-semibold tabular-nums text-success-fg" title="Задания недели">
+                <ClipboardList className="h-3 w-3" aria-hidden="true" />
+                {assignmentCount}
+                <span className="sr-only"> {assignmentsWord(assignmentCount)}</span>
+              </span>
+            )}
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${count === 0 ? 'bg-page-alt text-fg-muted' : 'bg-primary-soft text-primary-fg'}`}>
               {count}
               <span className="sr-only"> {documentsWord(count)}</span>
             </span>
           </button>
         )}
         {canManage && week && !editing && (
-          <Button size="sm" variant="ghost" iconOnly icon={Pencil} onClick={() => setEditing(true)} aria-label={`Изменить тему недели ${week.week}`} title="Изменить тему" />
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              iconOnly
+              icon={hidden ? Eye : EyeOff}
+              onClick={toggleHidden}
+              loading={togglingHidden}
+              aria-label={hidden ? `Показать неделю ${week.week} студентам` : `Скрыть неделю ${week.week} от студентов`}
+              title={hidden ? 'Показать студентам' : 'Скрыть от студентов'}
+            />
+            <Button size="sm" variant="ghost" iconOnly icon={Pencil} onClick={() => setEditing(true)} aria-label={`Изменить тему недели ${week.week}`} title="Изменить тему" />
+          </>
         )}
       </div>
       {open && (
         <div id={panelId} className="border-t border-line-subtle bg-page/40">
+          {hidden && (
+            <p className="flex items-center gap-1.5 border-b border-line-subtle px-5 py-2 text-xs text-warning-fg sm:px-6">
+              <EyeOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              Студенты не видят эту неделю и её документы — ни на странице курса, ни в поиске, ни в ответах ИИ.
+            </p>
+          )}
+          {assignments?.length > 0 && (
+            <WeekAssignments
+              courseId={courseId}
+              assignments={assignments}
+              canManage={canManage}
+              weeksCount={weeksCount}
+              onChanged={onAssignmentsChanged}
+            />
+          )}
           {error ? (
             <ErrorState compact title="Не удалось загрузить документы недели" message={error} onRetry={retry} />
           ) : !page && loading ? (
             <ListSkeleton />
           ) : page?.content.length === 0 ? (
-            <p className="px-5 py-4 text-sm text-fg-muted sm:px-6">В этой неделе документов нет.</p>
+            assignments?.length > 0 ? null : (
+              <p className="px-5 py-4 text-sm text-fg-muted sm:px-6">В этой неделе пока ничего нет.</p>
+            )
           ) : page && (
             <>
               <ul className="divide-y divide-line-subtle">
@@ -494,6 +654,98 @@ function WeekSection({ courseId, week, count, canManage, weeksCount, reloadKey, 
             </>
           )}
         </div>
+      )}
+    </li>
+  )
+}
+
+/**
+ * US-16 AC-1: the assignments of a week section. The teacher moves one to another week (or "Без недели") with the
+ * select and opens its grades; a student sees the title, the deadline and whether it is closed.
+ */
+function WeekAssignments({ courseId, assignments, canManage, weeksCount, onChanged }) {
+  return (
+    <div className="border-b border-line-subtle">
+      <p className="flex items-center gap-1.5 px-5 pt-3 text-[11px] font-semibold uppercase tracking-wide text-fg-muted sm:px-6">
+        <ClipboardList className="h-3 w-3" aria-hidden="true" /> Задания ({assignments.length})
+      </p>
+      <ul className="divide-y divide-line-subtle">
+        {assignments.map((assignment) => (
+          <WeekAssignmentRow
+            key={assignment.id}
+            courseId={courseId}
+            assignment={assignment}
+            canManage={canManage}
+            weeksCount={weeksCount}
+            onChanged={onChanged}
+          />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function WeekAssignmentRow({ courseId, assignment, canManage, weeksCount, onChanged }) {
+  const { notifyError, showSuccess } = useToast()
+  const selectId = useId()
+  const [busy, setBusy] = useState(false)
+  const closed = assignment.status === 'CLOSED'
+
+  const move = async (value) => {
+    const week = value === '' ? null : Number(value)
+    setBusy(true)
+    try {
+      await api.patch(`/assignments/${assignment.id}/week`, { week })
+      showSuccess(`«${assignment.title}» — ${week ? `неделя ${week}` : 'без недели'}`)
+      onChanged()
+    } catch (err) {
+      notifyError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const titleNode = canManage ? (
+    <Link
+      to={`/courses/${courseId}/assignments/${assignment.id}`}
+      className="rounded-sm font-medium text-fg hover:text-primary-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    >
+      {assignment.title}
+    </Link>
+  ) : <span className="font-medium text-fg">{assignment.title}</span>
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-2.5 text-sm sm:px-6">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-success-soft text-success-fg">
+        <ClipboardList className="h-3.5 w-3.5" aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block break-words">{titleNode}</span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-fg-muted">
+          <span className="inline-flex items-center gap-1">
+            <CalendarClock className="h-3 w-3" aria-hidden="true" />
+            {assignment.deadline ? `до ${formatDateTime(assignment.deadline)}` : 'Срок не указан'}
+          </span>
+          {closed && <span className="rounded-full bg-page-alt px-1.5 py-0.5 text-[11px] font-medium">Закрыто</span>}
+        </span>
+      </span>
+      {canManage && weeksCount > 0 && (
+        <span className="flex items-center gap-2">
+          <label htmlFor={selectId} className="text-xs text-fg-muted">Неделя</label>
+          <select
+            id={selectId}
+            value={assignment.weekNumber ?? ''}
+            disabled={busy}
+            onChange={(event) => move(event.target.value)}
+            aria-label={`Неделя задания ${assignment.title}`}
+            className="h-8 rounded-control border border-line-strong bg-surface px-2 text-xs text-fg outline-none transition focus:border-primary focus:ring-4 focus:ring-ring disabled:opacity-60"
+          >
+            <option value="">Без недели</option>
+            {Array.from({ length: weeksCount }, (_, index) => index + 1).map((week) => (
+              <option key={week} value={week}>Неделя {week}</option>
+            ))}
+          </select>
+        </span>
       )}
     </li>
   )
