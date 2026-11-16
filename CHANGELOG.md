@@ -96,7 +96,7 @@ No startup migration is needed (`ddl-auto=update` adds all of it).
 
 ### Tests
 
-New: `Sprint5AcceptancePostgresTest` (saved conversations with the cascades, hidden weeks in the student's lists and
+627 backend tests with PostgreSQL (CI green), 1 skipped (the real-Tesseract smoke test). New: `Sprint5AcceptancePostgresTest` (saved conversations with the cascades, hidden weeks in the student's lists and
 overview, assignment weeks and `WEEK_IN_USE`, the filters), `AiConversationServiceTest`, `AiQuestionLimiterTest`, new
 cases in `DocumentQnaServiceTest` (follow-ups) and `AssignmentEditTest` (assignment weeks).
 
@@ -108,6 +108,7 @@ cases in `DocumentQnaServiceTest` (follow-ups) and `AssignmentEditTest` (assignm
 - An assignment in a hidden week stays in the students' "Мои задачи" and "Задания курса": hiding a week hides its
   section and documents, not the work students have to do.
 - The weeks view loads at most 100 assignments of a course.
+- The UI of this review was checked by lint and build in CI only, not in a browser; see the manual checklist.
 
 ## Sprint 5 — Ask my courses, answer sources, course weeks
 
