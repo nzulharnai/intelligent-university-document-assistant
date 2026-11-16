@@ -198,8 +198,8 @@ class CourseWeekServiceTest {
                 mock(BatchImportRepository.class), mock(AssignmentService.class),
                 new DocumentPrivacyService(new PrivacyProperties(true, List.of())));
         lecture.setWeekNumber(null);
-        when(documents.findSummariesInCourses(any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(),
-                any(), any(), any(), any()))
+        when(documents.findSummariesInCourses(any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(),
+                anyBoolean(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(DocumentSummary.of(lecture))));
 
         List<DocumentResponse> forStudent = documentService.list("student@uni.kz", 10L, false, "none",

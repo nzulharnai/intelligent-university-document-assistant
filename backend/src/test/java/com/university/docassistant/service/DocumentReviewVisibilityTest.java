@@ -276,8 +276,8 @@ class DocumentReviewVisibilityTest {
 
         @Test
         void listAsksTheDatabaseForStudentVisibleRowsAndNeedsReviewIsForTheTeacher() {
-            when(documents.findSummariesInCourses(any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), any(),
-                    anyBoolean(), any(), any(), any(), any()))
+            when(documents.findSummariesInCourses(any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(),
+                anyBoolean(), any(), any(), any(), any()))
                     .thenReturn(Page.empty());
 
             service.list("student@uni.kz", 10L, false, PageRequest.of(0, 10));

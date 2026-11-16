@@ -79,3 +79,36 @@ to a fragment and an upgrade of an existing database.
 - [ ] Dark theme: the marked fragment, the hint chip, dimmed weeks and the task cards stay readable.
 - [ ] Keyboard only: open a week section (Enter/Space), change a document's week, accept a hint, edit a topic, open
       and save «Настроить недели», follow «Показать в документе».
+
+## Acceptance review
+
+### Saved conversations and limits (US-14 AC-4, AC-5) — S
+
+- [ ] `/assistant`: «История» is empty («Здесь появятся ваши разговоры с ИИ…»). Ask «Когда сдавать лабораторную
+      работу 2?» in INF345: the conversation appears in «История» with «INF345 · …» and «1 вопрос».
+- [ ] Ask «а третью?»: the AI understands it is about lab 3; «История» shows «2 вопроса».
+- [ ] Reload the page (QA-AI-014 step 4) and click the conversation: both questions and answers are back, with their
+      source cards; «Показать в документе» still works. A new question continues it.
+- [ ] Choose another course in «Где искать ответ»: the chat starts empty (a new conversation).
+- [ ] Ask on the course page in «Задать вопрос по курсу»: the question appears in «История» of `/assistant`.
+- [ ] The bin on a conversation asks first, then removes it; the open chat starts over if it was that one.
+- [ ] S2 (another student) opens `/api/v1/ai/conversations/{id}` of S's conversation: 404.
+- [ ] With `AI_QUESTIONS_PER_HOUR=3`: the 4th question within the hour answers «Лимит вопросов к ИИ: 3 в час.
+      Следующий вопрос можно задать через N мин.»; the note next to the course select says the limit is reached.
+- [ ] A question the documents do not answer (QA-UI-015 step 4) has the tag «Не найдено в документах».
+
+### Hidden weeks, assignments in weeks, filters (US-16 AC-1, AC-4, AC-5) — T, then S
+
+- [ ] «Настроить недели»: 14 (QA-CRS-016 step 1); weeks 1..14 are listed.
+- [ ] Open a week: «Задания (N)» lists its assignments; the select on an assignment moves it to week 5; week 5's
+      header shows the assignment count, the log has «Неделя задания».
+- [ ] «Настроить недели» below a week with only an assignment: «В неделях после нового числа есть документы или
+      задания…».
+- [ ] The eye on week 6 (QA-CRS-016 step 3): «Скрыта от студентов», the week is dimmed and its panel explains it.
+- [ ] S: the course page lists the weeks in order without week 6; its documents are not in «Списком», not found by
+      search, not used by the AI, and their direct links answer «Нет доступа».
+- [ ] T shows week 6 again: S sees it after a reload.
+- [ ] «Категория: Лекция» (QA-CRS-016 step 4): only lectures, as a list; «Загружены с … по …» narrows by date (both
+      days included); «с» after «по» shows «Дата «с» позже даты «по»» and loads nothing; «Сбросить» brings the weeks
+      view back.
+

@@ -1,5 +1,114 @@
 # Changelog
 
+## Sprint 5 — acceptance review
+
+The Sprint 5 stories checked against their acceptance criteria in `UniDocs_UserStories_Sprints.xlsx`; what the
+section below left open is added here. Manual browser checks: the "Acceptance review" section of
+[docs/sprint5-manual-test-checklist.md](docs/sprint5-manual-test-checklist.md). The QA sheets name the cases
+QA-AI-014, QA-UI-015 and QA-CRS-016; `Sprint5QaPostgresTest` calls them QA-ASK-014, QA-SRC-015 and QA-WEEK-016.
+
+| Criterion | Before | Now |
+|---|---|---|
+| US-14 AC-4 Conversations are saved and can be continued later | the chat lived only in the browser tab | saved per user, "История" on the assistant page |
+| US-14 AC-5 Per-user limits protect the shared AI quota | only a cap on questions in flight for everyone | 30 questions an hour and 200 a day per user, with the time of the next one |
+| US-15 AC-4 An answer without sources is clearly marked | grey italic text | the tag "Не найдено в документах" |
+| US-16 AC-1 Documents **and assignments** move between weeks | documents only | assignments too |
+| US-16 AC-4 Hidden sections are visible only to the teacher | no hiding | a week can be hidden with its documents |
+| US-16 AC-5 Documents can be filtered by category and date | no filter on the course page | category and upload dates |
+
+### US-14 — Saved conversations and question limits
+
+- **Every question to `POST /ai/ask` is saved** with the answer as it was shown (text, sources, assignments, tasks) in
+  a conversation of the asking user. The answer has `conversationId`; sending it back continues that conversation in
+  the scope it was started with (one course or all of the user's courses; a `courseId` sent with it is ignored).
+- **Follow-ups.** The last three turns of the conversation go into the prompt as `[ПРЕДЫДУЩИЕ ВОПРОСЫ ЭТОГО ДИАЛОГА]`,
+  masked like the question, each answer cut to 600 characters, marked as context for understanding the question
+  only: facts still come only from the blocks of the current prompt. The previous question's words are added to the
+  search, so "а третью?" after "Когда сдавать лабораторную 2?" finds the labs.
+- **Endpoints, own conversations only** (another user's id is 404 `CONVERSATION_NOT_FOUND`, like a missing one):
+  - `GET /ai/conversations` (latest question first, paged, at most 50 a page): title (the first question, at most
+    120 characters), course, created and updated time, number of questions;
+  - `GET /ai/conversations/{id}`: the conversation with its turns in reading order (at most 100);
+  - `DELETE /ai/conversations/{id}`;
+  - a conversation holds at most 100 questions, then 409 `CONVERSATION_FULL` "Начните новый разговор".
+- **The AI is still called outside any transaction;** the turn is written afterwards in a short one. A question the AI
+  could not answer (503) leaves no turn. A conversation deleted in another tab while the AI answered: the answer is
+  shown and not saved.
+- **Limits (AC-5).** `AiQuestionLimiter` counts every question of a user - the assistant, the course chat and the
+  document chat together - in the last hour and the last 24 hours: `app.ai.questions-per-hour`
+  (`AI_QUESTIONS_PER_HOUR`, default 30) and `app.ai.questions-per-day` (`AI_QUESTIONS_PER_DAY`, default 200); 0 turns a
+  limit off. Over a limit: 429 `AI_QUESTION_LIMIT` "Лимит вопросов к ИИ: 30 в час. Следующий вопрос можно задать через
+  12 мин." with `Retry-After`. A question refused (403) or not answered (503) is given back. `GET /ai/limits` returns
+  what is left this hour and today.
+- **Frontend.**
+  - "ИИ-ассистент" has "История": the conversations with their course and number of questions, "Новый" for a new
+    one, a click opens one with its sources and continues it, the bin deletes it after a confirmation. Choosing
+    another course starts a new conversation. "Осталось N вопросов из 30 в этот час" next to the course select,
+    highlighted when three or fewer are left.
+  - The course page chat and the dashboard chat ask through `/ai/ask` too, so their questions are saved and
+    appear in "История"; within one visit they continue one conversation.
+  - A question over the limit shows the server's text in the chat with "Повторить".
+
+### US-15 — "Не найдено в документах"
+
+- An answer the documents do not hold (`hasAnswer: false`) has the tag "Не найдено в документах" above the text.
+
+### US-16 — Assignments in weeks, hidden weeks, filters
+
+- **Assignments in weeks (AC-1).** `assignments.week_number`; `PATCH /assignments/{id}/week` `{"week": n | null}`
+  for the course teacher and ADMIN (400 `WEEK_OUT_OF_RANGE` outside 1..weeks count). The students' tasks do not
+  change. An AI assignment moved by the teacher is "taken over", so a re-analysis of its document still recognizes it.
+  Audited as `ASSIGNMENT_WEEK_SET` "Неделя задания". `AssignmentResponse` has `weekNumber`. The weeks overview counts
+  assignments per week (`assignmentCount`) and in "Без недели" (`withoutWeekAssignmentCount`); a student also gets
+  the weeks that hold only assignments. `WEEK_IN_USE` now also covers weeks with assignments.
+- **Hidden weeks (AC-4).** `course_weeks.hidden`; `PUT /courses/{id}/weeks/{week}/visibility` `{"hidden": true |
+  false}` (`MANAGE_COURSE`), audited as `COURSE_WEEKS_CHANGED`. For a student a hidden week and its documents are gone
+  everywhere: the weeks overview, the course's documents, search, Q&A retrieval, access by id and the status poll.
+  The rule is in the shared `VISIBLE_TO_STUDENTS[_SQL]` and in `AccessControlService.can`. The teacher and ADMIN see the
+  week, marked. The topic, the plan and the week's documents and assignments stay; a later syllabus plan never shows
+  the week again.
+- **Filters (AC-5).** `GET /documents` takes `category` and `from` / `to` (upload dates, `YYYY-MM-DD`, both days
+  included; `from` after `to` is 400 `INVALID_PARAMETER`).
+- **Frontend.**
+  - A week header has an eye button for the teacher: "Скрыть от студентов" / "Показать студентам"; a hidden week is
+    dimmed with "Скрыта от студентов", and its panel says students do not see it anywhere.
+  - An opened week shows "Задания (N)" above its documents: title, deadline, "Закрыто"; the teacher gets a week
+    select on each and a link to its grades. The header counts assignments next to documents.
+  - "Документы курса" has a filter bar: "Категория", "Загружены с … по …" and "Сбросить". While a filter is set the
+    documents are one list.
+
+### Database (applied automatically at startup, safe with existing data)
+
+| Change | How existing rows are handled |
+|---|---|
+| `ai_conversations` (user, course, title, created_at, updated_at) | new table; deleted with its user and with its course (`ON DELETE CASCADE`) |
+| `ai_conversation_turns` (conversation, question, answer_json, created_at) | new table; deleted with its conversation |
+| `assignments.week_number` | nullable: every existing assignment is "Без недели" |
+| `course_weeks.hidden` | NOT NULL with `DEFAULT false`: no week is hidden |
+
+No startup migration is needed (`ddl-auto=update` adds all of it).
+
+### Error codes and audit actions
+
+- New error codes, each with a Russian text in `CODE_MESSAGES`: `AI_QUESTION_LIMIT`, `CONVERSATION_NOT_FOUND`,
+  `CONVERSATION_FULL`.
+- New audit action with a Russian label in the admin log: `ASSIGNMENT_WEEK_SET`.
+
+### Tests
+
+New: `Sprint5AcceptancePostgresTest` (saved conversations with the cascades, hidden weeks in the student's lists and
+overview, assignment weeks and `WEEK_IN_USE`, the filters), `AiConversationServiceTest`, `AiQuestionLimiterTest`, new
+cases in `DocumentQnaServiceTest` (follow-ups) and `AssignmentEditTest` (assignment weeks).
+
+### Known limitations
+
+- The limits are counted in memory, per server instance, and start again after a restart.
+- The document chat (the "Чат с ИИ" tab of a document) is not saved; the assistant, the course chat and the
+  dashboard chat are.
+- An assignment in a hidden week stays in the students' "Мои задачи" and "Задания курса": hiding a week hides its
+  section and documents, not the work students have to do.
+- The weeks view loads at most 100 assignments of a course.
+
 ## Sprint 5 — Ask my courses, answer sources, course weeks
 
 US-14 Ask My Courses in Plain Language, US-15 Show Where an Answer Comes From, US-16 Course Sections by Week. Manual
