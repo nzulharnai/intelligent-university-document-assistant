@@ -208,8 +208,8 @@ public class AssignmentService {
             takeOver(assignment);
             assignment.setWeekNumber(week);
             assignmentRepository.saveAndFlush(assignment);
-            auditService.record(user.getEmail(), AuditService.ASSIGNMENT_WEEK_SET, "Assignment " + id + " ""
-                    + assignment.getTitle() + "" of course " + course.getId() + ": "
+            auditService.record(user.getEmail(), AuditService.ASSIGNMENT_WEEK_SET, "Assignment " + id + " \""
+                    + assignment.getTitle() + "\" of course " + course.getId() + ": "
                     + (previous == null ? "no week" : "week " + previous) + " -> "
                     + (week == null ? "no week" : "week " + week));
         }
