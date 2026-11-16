@@ -16,6 +16,7 @@ import com.university.docassistant.entity.DocumentCategory;
 import com.university.docassistant.entity.DocumentVisibility;
 import com.university.docassistant.exception.ApiException;
 import com.university.docassistant.exception.ErrorCodes;
+import com.university.docassistant.service.AiConversationService;
 import com.university.docassistant.service.DocumentQnaService;
 import com.university.docassistant.service.DocumentService;
 import com.university.docassistant.service.DocumentService.DocumentContent;
@@ -27,6 +28,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -47,6 +49,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 
@@ -67,6 +70,7 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final DocumentQnaService documentQnaService;
+    private final AiConversationService conversationService;
 
     /**
      * Uploads for the course's teacher or ADMIN only (403 otherwise). Without {@code category} the AI classifier
@@ -109,16 +113,20 @@ public class DocumentController {
     /**
      * Documents of the user's courses, optionally only those of one course ({@code ?courseId=}); {@code ?needsReview=true}
      * keeps those the AI or the OCR failed on ("Требуют проверки"), for the course teacher and ADMIN.
-     * US-16 {@code ?week=}: a week number or "none" ("Без недели"), usually with {@code courseId}.
+     * US-16 {@code ?week=}: a week number or "none" ("Без недели"), usually with {@code courseId};
+     * {@code ?category=LECTURE} and {@code ?from=2026-11-01&to=2026-11-30} (upload dates, both included).
      */
     @GetMapping
     public PageResponse<DocumentResponse> list(
             @RequestParam(value = "courseId", required = false) Long courseId,
             @RequestParam(value = "needsReview", defaultValue = "false") boolean needsReview,
             @RequestParam(value = "week", required = false) String week,
+            @RequestParam(value = "category", required = false) DocumentCategory category,
+            @RequestParam(value = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(value = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @PageableDefault(size = 20, sort = "uploadedAt", direction = Sort.Direction.DESC) Pageable pageable,
             @AuthenticationPrincipal UserDetails principal) {
-        return documentService.list(principal.getUsername(), courseId, needsReview, week,
+        return documentService.list(principal.getUsername(), courseId, needsReview, week, category, from, to,
                 SortValidator.requireSortable(pageable, SORTABLE_FIELDS));
     }
 
@@ -185,7 +193,8 @@ public class DocumentController {
     public DocumentAnswerResponse ask(@PathVariable Long id,
                                       @Valid @RequestBody DocumentQuestionRequest request,
                                       @AuthenticationPrincipal UserDetails principal) {
-        return documentQnaService.askDocument(id, request.question(), principal.getUsername());
+        return conversationService.limited(principal.getUsername(),
+                () -> documentQnaService.askDocument(id, request.question(), principal.getUsername()));
     }
 
     /** Assignments the AI found in this document (each enrolled student has a task per assignment). */

@@ -22,7 +22,7 @@ import org.hibernate.annotations.OnDeleteAction;
 /**
  * US-16: one week of a course's plan - its topic, from the syllabus the AI read ({@code sourceDocument}) or typed by
  * the teacher. A row exists only for weeks with a topic or a teacher's edit; weeks 1..Course.weeksCount without a row
- * simply have no topic. Deleted with the course; the plan stays when its syllabus is deleted.
+ * simply have no topic (and are not hidden). Deleted with the course; the plan stays when its syllabus is deleted.
  */
 @Entity
 @Table(name = "course_weeks", uniqueConstraints = @UniqueConstraint(name = "uk_course_weeks_course_week",
@@ -61,4 +61,12 @@ public class CourseWeek {
     @Column(name = "edited_by_teacher", nullable = false)
     @ColumnDefault("false")
     private boolean editedByTeacher;
+
+    /**
+     * Hidden by the teacher (US-16 AC-4): students see neither the week nor its documents - not in the course page,
+     * the lists, search, Q&A or by id - until it is shown again. The teacher and ADMIN see everything.
+     */
+    @Column(nullable = false)
+    @ColumnDefault("false")
+    private boolean hidden;
 }

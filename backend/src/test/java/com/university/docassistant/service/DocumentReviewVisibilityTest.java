@@ -276,18 +276,21 @@ class DocumentReviewVisibilityTest {
 
         @Test
         void listAsksTheDatabaseForStudentVisibleRowsAndNeedsReviewIsForTheTeacher() {
-            when(documents.findSummariesInCourses(any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), any()))
+            when(documents.findSummariesInCourses(any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), any(),
+                    any(), any(), any()))
                     .thenReturn(Page.empty());
 
             service.list("student@uni.kz", 10L, false, PageRequest.of(0, 10));
-            verify(documents).findSummariesInCourses(List.of(10L), false, 10L, false, null, false, PageRequest.of(0, 10));
+            verify(documents).findSummariesInCourses(List.of(10L), false, 10L, false, null, false, null, null,
+                    null, PageRequest.of(0, 10));
 
             assertForbidden(() -> service.list("student@uni.kz", 10L, true, PageRequest.of(0, 10)),
                     ErrorCodes.COURSE_NOT_ENROLLED, null);
             verify(audit).record(eq("student@uni.kz"), eq(AuditService.ACCESS_DENIED), contains("MANAGE_COURSE"));
 
             service.list("teacher@uni.kz", 10L, true, PageRequest.of(0, 10));
-            verify(documents).findSummariesInCourses(List.of(10L), true, 10L, true, null, false, PageRequest.of(0, 10));
+            verify(documents).findSummariesInCourses(List.of(10L), true, 10L, true, null, false, null, null, null,
+                    PageRequest.of(0, 10));
         }
 
         @Test
@@ -306,6 +309,7 @@ class DocumentReviewVisibilityTest {
             return Arrays.stream(repository.getMethods())
                     .filter((Method method) -> method.getName().equals(name))
                     .map(method -> method.getAnnotation(Query.class))
+                    .filter(java.util.Objects::nonNull) // the default overloads without the new filters
                     .flatMap(query -> java.util.stream.Stream.of(query.value(), query.countQuery()))
                     .filter(text -> !text.isEmpty())
                     .toList();

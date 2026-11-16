@@ -12,6 +12,7 @@ import com.university.docassistant.entity.Role;
 import com.university.docassistant.entity.User;
 import com.university.docassistant.exception.ApiException;
 import com.university.docassistant.exception.ErrorCodes;
+import com.university.docassistant.repository.AssignmentRepository;
 import com.university.docassistant.repository.CourseWeekRepository;
 import com.university.docassistant.repository.DocumentRepository;
 import com.university.docassistant.security.AccessControlService;
@@ -41,6 +42,7 @@ public class CourseWeekService {
 
     private final AccessControlService access;
     private final DocumentRepository documentRepository;
+    private final AssignmentRepository assignmentRepository;
     private final CourseWeekRepository weekRepository;
     private final WeekSuggestionService suggestionService;
     private final AiClientService aiClient;
@@ -73,9 +75,12 @@ public class CourseWeekService {
         if (weeksCount < 1 || weeksCount > Course.MAX_WEEKS) {
             throw outOfRange(Course.MAX_WEEKS);
         }
-        Integer used = documentRepository.findMaxWeek(courseId);
-        if (used != null && weeksCount < used) {
-            throw ApiException.conflict(ErrorCodes.WEEK_IN_USE, "Week " + used + " has documents");
+        Integer usedByDocuments = documentRepository.findMaxWeek(courseId);
+        Integer usedByAssignments = assignmentRepository.findMaxWeek(courseId);
+        int used = Math.max(usedByDocuments == null ? 0 : usedByDocuments,
+                usedByAssignments == null ? 0 : usedByAssignments);
+        if (weeksCount < used) {
+            throw ApiException.conflict(ErrorCodes.WEEK_IN_USE, "Week " + used + " has documents or assignments");
         }
         int previous = course.getWeeksCount();
         course.setWeeksCount(weeksCount);
@@ -107,7 +112,30 @@ public class CourseWeekService {
         auditService.record(user.getEmail(), AuditService.COURSE_WEEKS_CHANGED, "Course " + courseId + ": week "
                 + week + (value == null ? " topic cleared" : " topic set to \"" + value + "\""));
         long documents = counts(courseId, true).getOrDefault(week, 0L);
-        return new WeekView(week, value, documents, true);
+        long assignments = assignmentCounts(courseId).getOrDefault(week, 0L);
+        return new WeekView(week, value, documents, true, assignments, row.isHidden());
+    }
+
+    /**
+     * US-16 AC-4, PUT /courses/{id}/weeks/{week}/visibility: hides the week from students (its section, its documents
+     * everywhere) or shows it again. The topic and the plan are kept; a hidden week keeps its documents and assignments.
+     */
+    @Transactional
+    public WeekView setHidden(Long courseId, int week, boolean hidden, String email) {
+        User user = access.currentUser(email);
+        Course course = access.authorizeCourse(user, courseId, Permission.MANAGE_COURSE);
+        requireWeek(week, course.getWeeksCount());
+        CourseWeek row = weekRepository.findByCourseIdAndWeek(courseId, week)
+                .orElseGet(() -> CourseWeek.builder().course(course).weekNumber(week).build());
+        if (row.getId() == null || row.isHidden() != hidden) {
+            row.setHidden(hidden);
+            weekRepository.save(row);
+            auditService.record(user.getEmail(), AuditService.COURSE_WEEKS_CHANGED, "Course " + courseId + ": week "
+                    + week + (hidden ? " hidden from students" : " shown to students"));
+        }
+        long documents = counts(courseId, true).getOrDefault(week, 0L);
+        long assignments = assignmentCounts(courseId).getOrDefault(week, 0L);
+        return new WeekView(week, row.getTopic(), documents, row.isEditedByTeacher(), assignments, hidden);
     }
 
     /** PATCH /documents/{id}/week: a week (1..weeks count) or null for "Без недели"; the hint is cleared. */
@@ -187,23 +215,37 @@ public class CourseWeekService {
     private WeeksOverview overview(Course course, boolean manages) {
         Long courseId = course.getId();
         Map<Integer, Long> counts = counts(courseId, manages);
+        Map<Integer, Long> assignmentCounts = assignmentCounts(courseId);
         Map<Integer, CourseWeek> topics = weekRepository.findByCourseId(courseId).stream()
                 .collect(Collectors.toMap(CourseWeek::getWeekNumber, week -> week));
         List<WeekView> weeks = new ArrayList<>();
         for (int week = 1; week <= course.getWeeksCount(); week++) {
             long documents = counts.getOrDefault(week, 0L);
+            long assignments = assignmentCounts.getOrDefault(week, 0L);
             CourseWeek row = topics.get(week);
+            boolean hidden = row != null && row.isHidden();
             if (manages) {
                 weeks.add(new WeekView(week, row == null ? null : row.getTopic(), documents,
-                        row != null && row.isEditedByTeacher()));
-            } else if (documents > 0) {
-                // A student sees a week only through documents they can see; its topic may come from a hidden syllabus.
-                weeks.add(new WeekView(week, row == null ? null : row.getTopic(), documents, null));
+                        row != null && row.isEditedByTeacher(), assignments, hidden));
+            } else if (!hidden && (documents > 0 || assignments > 0)) {
+                // A student sees a week only through what is in it; its topic may come from a hidden syllabus.
+                weeks.add(new WeekView(week, row == null ? null : row.getTopic(), documents, null, assignments, null));
             }
         }
         long withoutWeek = counts.getOrDefault(null, 0L);
         Long pending = manages ? documentRepository.countPendingSuggestions(courseId) : null;
-        return new WeeksOverview(courseId, course.getWeeksCount(), weeks, withoutWeek, pending);
+        return new WeeksOverview(courseId, course.getWeeksCount(), weeks, withoutWeek, pending,
+                assignmentCounts.getOrDefault(null, 0L));
+    }
+
+    /** Assignments per week (null key: without a week). */
+    private Map<Integer, Long> assignmentCounts(Long courseId) {
+        Map<Integer, Long> counts = new HashMap<>();
+        for (Object[] row : assignmentRepository.countByWeek(courseId)) {
+            Integer week = row[0] == null ? null : ((Number) row[0]).intValue();
+            counts.put(week, ((Number) row[1]).longValue());
+        }
+        return counts;
     }
 
     /** Documents per week (null key: without a week); a student's only what they may see. */

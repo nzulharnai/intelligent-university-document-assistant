@@ -190,6 +190,34 @@ public class AssignmentService {
     }
 
     /**
+     * US-16 PATCH /assignments/{id}/week: puts the assignment into a week of its course (1..weeks count) or, with
+     * null, back to "Без недели". Students' tasks and statuses do not change. For the course teacher or ADMIN.
+     */
+    @Transactional
+    public AssignmentResponse setWeek(Long id, Integer week, String email) {
+        User user = access.currentUser(email);
+        Assignment assignment = assignmentRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ErrorCodes.ASSIGNMENT_NOT_FOUND, "Assignment not found"));
+        Course course = access.authorizeCourse(user, assignment.getCourse().getId(), Permission.MANAGE_ASSIGNMENTS);
+        if (week != null && (week < 1 || week > course.getWeeksCount())) {
+            throw ApiException.badRequest(ErrorCodes.WEEK_OUT_OF_RANGE, "Week must be from 1 to " + course.getWeeksCount());
+        }
+        Integer previous = assignment.getWeekNumber();
+        if (!Objects.equals(previous, week)) {
+            // The teacher placed it: a later re-analysis of its document still recognizes it as the same assignment.
+            takeOver(assignment);
+            assignment.setWeekNumber(week);
+            assignmentRepository.saveAndFlush(assignment);
+            auditService.record(user.getEmail(), AuditService.ASSIGNMENT_WEEK_SET, "Assignment " + id + " ""
+                    + assignment.getTitle() + "" of course " + course.getId() + ": "
+                    + (previous == null ? "no week" : "week " + previous) + " -> "
+                    + (week == null ? "no week" : "week " + week));
+        }
+        return assignmentRepository.findViewById(id)
+                .orElseThrow(() -> ApiException.notFound(ErrorCodes.ASSIGNMENT_NOT_FOUND, "Assignment not found"));
+    }
+
+    /**
      * CLOSED -> ACTIVE: submissions are accepted again and students enrolled meanwhile get their task. Idempotent for
      * an ACTIVE assignment. For the course teacher or ADMIN.
      */

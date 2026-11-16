@@ -143,34 +143,58 @@ public class DocumentQnaService {
         if (context.isEmpty() && assignments.isEmpty() && tasks.isEmpty()) {
             return DocumentAnswerResponse.withoutSources(NO_TEXT_ANSWER);
         }
-        return answer(question, new Context(context, assignments, tasks, isStudent(user), now), realNames);
+        return answer(question, List.of(), new Context(context, assignments, tasks, isStudent(user), now), realNames);
     }
+
+    /**
+     * US-14: an earlier question of the same saved conversation and the answer it got. It helps the model understand
+     * a follow-up ("а третья?"); facts still come only from the blocks of the current prompt.
+     */
+    public record PriorTurn(String question, String answer) {
+    }
+
+    /** At most this many earlier turns go into the prompt, each answer shortened to {@link #PRIOR_ANSWER_CHARS}. */
+    static final int PRIOR_TURNS = 3;
+    static final int PRIOR_ANSWER_CHARS = 600;
 
     /** Answers from the course's documents; 403 unless the user is enrolled in it, teaches it or is ADMIN. */
     public DocumentAnswerResponse askCourse(Long courseId, String question, String userEmail) {
+        return askCourse(courseId, question, userEmail, List.of());
+    }
+
+    /** {@link #askCourse(Long, String, String)} continuing a saved conversation ({@code history}, oldest first). */
+    public DocumentAnswerResponse askCourse(Long courseId, String question, String userEmail,
+                                            List<PriorTurn> history) {
         User user = access.currentUser(userEmail);
         access.authorizeCourse(user, courseId, Permission.ASK_AI);
         requireAi();
         // includeTeacherOnly: the user teaches the course or is ADMIN - also who sees the real file names.
         boolean manages = access.scope(user).includeTeacherOnly();
-        return answerFromCourses(user, question, List.of(courseId), manages, manages);
+        return answerFromCourses(user, question, history, List.of(courseId), manages, manages);
     }
 
     /** Answers from the documents of all the user's courses (enrolled, taught, or all of them for ADMIN). */
     public DocumentAnswerResponse askAll(String question, String userEmail) {
+        return askAll(question, userEmail, List.of());
+    }
+
+    /** {@link #askAll(String, String)} continuing a saved conversation ({@code history}, oldest first). */
+    public DocumentAnswerResponse askAll(String question, String userEmail, List<PriorTurn> history) {
         User user = access.currentUser(userEmail);
         Scope scope = access.scope(user);
         requireAi();
         if (scope.courseIds().isEmpty()) {
             return DocumentAnswerResponse.withoutSources(NO_ANSWER);
         }
-        return answerFromCourses(user, question, scope.courseIds(), scope.includeTeacherOnly(),
+        return answerFromCourses(user, question, history, scope.courseIds(), scope.includeTeacherOnly(),
                 scope.includeTeacherOnly());
     }
 
-    private DocumentAnswerResponse answerFromCourses(User user, String question, List<Long> allowedCourseIds,
-                                                     boolean includeTeacherOnly, boolean realNames) {
-        Optional<String> tsQuery = toTsQuery(question);
+    private DocumentAnswerResponse answerFromCourses(User user, String question, List<PriorTurn> history,
+                                                     List<Long> allowedCourseIds, boolean includeTeacherOnly,
+                                                     boolean realNames) {
+        // A follow-up ("а третья?") shares few words with the documents: the previous question's words help find them.
+        Optional<String> tsQuery = toTsQuery(searchText(question, history));
         List<ChunkHit> context = distinct(tsQuery
                 .map(query -> chunkRepository.searchInCourses(allowedCourseIds, includeTeacherOnly, query,
                         COURSE_CONTEXT_CHUNKS * DUPLICATE_HEADROOM))
@@ -184,7 +208,16 @@ public class DocumentQnaService {
             // Unlike a single document, there is no sensible "beginning" of a course to fall back to.
             return DocumentAnswerResponse.withoutSources(NO_ANSWER);
         }
-        return answer(question, new Context(context, assignments, tasks, isStudent(user), now), realNames);
+        return answer(question, history, new Context(context, assignments, tasks, isStudent(user), now), realNames);
+    }
+
+    /** The question, then the previous question of the conversation (if any): the words the search looks for. */
+    static String searchText(String question, List<PriorTurn> history) {
+        if (history == null || history.isEmpty()) {
+            return question;
+        }
+        PriorTurn last = history.get(history.size() - 1);
+        return last.question() == null ? question : question + " " + last.question();
     }
 
     /** What goes into one prompt; {@code student}: the [МОИ ЗАДАЧИ] block applies to this user. */
@@ -228,12 +261,18 @@ public class DocumentQnaService {
      * question itself are masked here, so no personal data reaches the AI. {@code realNames}: the sources show the
      * real file names (the course teacher, ADMIN), otherwise masked ones.
      */
-    private DocumentAnswerResponse answer(String question, Context prompt, boolean realNames) {
+    private DocumentAnswerResponse answer(String question, List<PriorTurn> history, Context prompt,
+                                          boolean realNames) {
         List<ChunkHit> context = prompt.chunks();
         List<QnaAssignment> assignments = prompt.assignments();
         List<QnaTask> tasks = prompt.tasks();
+        // The earlier turns are masked like the question: the user typed them, and an answer may quote a fragment.
+        List<PriorTurn> masked = recent(history).stream()
+                .map(turn -> new PriorTurn(privacyService.maskQuestion(turn.question()),
+                        turn.answer() == null ? null : privacyService.maskQuestion(turn.answer())))
+                .toList();
         String reply = callAi(systemPrompt(prompt, privacyService::maskFileName),
-                userPrompt(privacyService.maskQuestion(question)));
+                userPrompt(privacyService.maskQuestion(question), masked));
 
         Set<Integer> cited = citedFragments(reply, context.size());
         Set<Integer> citedAssignments = citedAssignments(reply, assignments.size());
@@ -454,6 +493,39 @@ public class DocumentQnaService {
 
     static String userPrompt(String question) {
         return "Вопрос: " + question.strip();
+    }
+
+    /**
+     * With earlier turns of a saved conversation: they come first, marked as context for understanding the question
+     * only, then the question itself. Without them, the same as {@link #userPrompt(String)}.
+     */
+    static String userPrompt(String question, List<PriorTurn> history) {
+        if (history == null || history.isEmpty()) {
+            return userPrompt(question);
+        }
+        StringBuilder text = new StringBuilder("""
+                [ПРЕДЫДУЩИЕ ВОПРОСЫ ЭТОГО ДИАЛОГА]
+                Они нужны только чтобы понять, о чём текущий вопрос (например, «а третья?»). Факты, даты и ссылки \
+                бери только из блоков системного сообщения; номера фрагментов, заданий и задач в прошлых ответах \
+                относились к другим блокам и сейчас недействительны.
+                """);
+        for (PriorTurn turn : history) {
+            text.append("Вопрос: ").append(turn.question() == null ? "" : turn.question().strip()).append('\n');
+            String answer = turn.answer() == null ? "" : turn.answer().strip();
+            if (answer.length() > PRIOR_ANSWER_CHARS) {
+                answer = answer.substring(0, PRIOR_ANSWER_CHARS) + "…";
+            }
+            text.append("Ответ: ").append(answer).append("\n\n");
+        }
+        return text.append("[ТЕКУЩИЙ ВОПРОС]\n").append(userPrompt(question)).toString();
+    }
+
+    /** The last {@link #PRIOR_TURNS} turns, oldest first. */
+    static List<PriorTurn> recent(List<PriorTurn> history) {
+        if (history == null || history.isEmpty()) {
+            return List.of();
+        }
+        return history.subList(Math.max(0, history.size() - PRIOR_TURNS), history.size());
     }
 
     /**

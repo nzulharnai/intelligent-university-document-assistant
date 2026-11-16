@@ -5,6 +5,7 @@ import com.university.docassistant.dto.CourseWeekDtos.DocumentWeekResponse;
 import com.university.docassistant.dto.CourseWeekDtos.SetDocumentWeekRequest;
 import com.university.docassistant.dto.CourseWeekDtos.SuggestResponse;
 import com.university.docassistant.dto.CourseWeekDtos.UpdateWeekTopicRequest;
+import com.university.docassistant.dto.CourseWeekDtos.UpdateWeekVisibilityRequest;
 import com.university.docassistant.dto.CourseWeekDtos.UpdateWeeksCountRequest;
 import com.university.docassistant.dto.CourseWeekDtos.WeekView;
 import com.university.docassistant.dto.CourseWeekDtos.WeeksOverview;
@@ -51,6 +52,14 @@ public class CourseWeekController {
                              @Valid @RequestBody UpdateWeekTopicRequest request,
                              @AuthenticationPrincipal UserDetails principal) {
         return weekService.setTopic(id, week, request.topic(), principal.getUsername());
+    }
+
+    /** US-16 AC-4: {"hidden": true} hides the week and its documents from students; false shows them again. */
+    @PutMapping("/courses/{id}/weeks/{week}/visibility")
+    public WeekView setHidden(@PathVariable Long id, @PathVariable int week,
+                              @Valid @RequestBody UpdateWeekVisibilityRequest request,
+                              @AuthenticationPrincipal UserDetails principal) {
+        return weekService.setHidden(id, week, request.hidden(), principal.getUsername());
     }
 
     @PostMapping("/courses/{id}/weeks/accept-all")

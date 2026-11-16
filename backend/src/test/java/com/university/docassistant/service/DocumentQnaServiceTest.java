@@ -582,4 +582,44 @@ class DocumentQnaServiceTest {
 
         assertThat(systemPromptSent()).doesNotContain("990101300013").contains("Отчёт [ИИН скрыт] · Срок: срок не указан");
     }
+
+    // --- US-14 review: saved conversations ----------------------------------------------------------------------------
+
+    @Test
+    void aFollowUpIsSearchedWithThePreviousQuestionAndSeesTheEarlierTurnsMasked() {
+        when(access.scope(student)).thenReturn(new Scope(false, List.of(3L), false));
+        when(chunks.searchInCourses(eq(List.of(3L)), eq(false), anyString(), anyInt()))
+                .thenReturn(List.of(hit(7, 1, "Лабораторная работа 3 сдаётся до 10 ноября.")));
+        when(ai.chat(anyString(), anyString())).thenReturn(Optional.of("До 10 ноября [doc7.pdf, фрагмент 1]."));
+        List<DocumentQnaService.PriorTurn> history = List.of(
+                new DocumentQnaService.PriorTurn("Привет", "Здравствуйте"),
+                new DocumentQnaService.PriorTurn("Мой ИИН 990101300013, что с ним?", "Эти данные скрыты."),
+                new DocumentQnaService.PriorTurn("Что такое нормализация?", "Это приведение схемы к нормальным формам."),
+                new DocumentQnaService.PriorTurn("Когда сдавать лабораторную 2?", "До 3 ноября [фрагмент 1]."));
+
+        DocumentAnswerResponse answer = service.askAll("а третью?", EMAIL, history);
+
+        assertThat(answer.hasAnswer()).isTrue();
+        ArgumentCaptor<String> query = ArgumentCaptor.forClass(String.class);
+        verify(chunks).searchInCourses(eq(List.of(3L)), eq(false), query.capture(), anyInt());
+        assertThat(query.getValue()).contains("третью", "лабораторную", "2");
+        ArgumentCaptor<String> user = ArgumentCaptor.forClass(String.class);
+        verify(ai).chat(anyString(), user.capture());
+        // Only the last three turns, masked; the current question last.
+        assertThat(user.getValue())
+                .startsWith("[ПРЕДЫДУЩИЕ ВОПРОСЫ ЭТОГО ДИАЛОГА]")
+                .doesNotContain("Привет", "990101300013")
+                .contains("[ИИН скрыт]", "Вопрос: Когда сдавать лабораторную 2?", "Ответ: До 3 ноября")
+                .endsWith("[ТЕКУЩИЙ ВОПРОС]\nВопрос: а третью?");
+    }
+
+    @Test
+    void withoutHistoryThePromptIsTheQuestionAlone() {
+        assertThat(DocumentQnaService.userPrompt("Когда экзамен?", List.of())).isEqualTo("Вопрос: Когда экзамен?");
+        assertThat(DocumentQnaService.searchText("Когда экзамен?", List.of())).isEqualTo("Когда экзамен?");
+        String longAnswer = "а".repeat(DocumentQnaService.PRIOR_ANSWER_CHARS + 50);
+        assertThat(DocumentQnaService.userPrompt("И?", List.of(new DocumentQnaService.PriorTurn("Q", longAnswer))))
+                .contains("а".repeat(DocumentQnaService.PRIOR_ANSWER_CHARS) + "…")
+                .doesNotContain("а".repeat(DocumentQnaService.PRIOR_ANSWER_CHARS + 1));
+    }
 }

@@ -16,20 +16,38 @@ public final class CourseWeekDtos {
     }
 
     /**
-     * GET /courses/{id}/weeks. A student gets only the weeks with documents they can see, and their counts cover
-     * only those; {@code pendingSuggestions} is null for them. The teacher gets every week 1..weeksCount.
+     * GET /courses/{id}/weeks. A student gets only the weeks that are not hidden and have documents they can see or
+     * assignments, and the document counts cover only what they can see; {@code pendingSuggestions} is null for them.
+     * The teacher gets every week 1..weeksCount, hidden ones marked. {@code withoutWeekAssignmentCount}: the
+     * assignments in "Без недели".
      */
     public record WeeksOverview(
             Long courseId,
             int weeksCount,
             List<WeekView> weeks,
             long withoutWeekCount,
-            Long pendingSuggestions
+            Long pendingSuggestions,
+            long withoutWeekAssignmentCount
     ) {
+        public WeeksOverview(Long courseId, int weeksCount, List<WeekView> weeks, long withoutWeekCount,
+                             Long pendingSuggestions) {
+            this(courseId, weeksCount, weeks, withoutWeekCount, pendingSuggestions, 0);
+        }
     }
 
-    /** {@code topic} null when the week has none; {@code editedByTeacher} only for the teacher (null for a student). */
-    public record WeekView(int week, String topic, long documentCount, Boolean editedByTeacher) {
+    /**
+     * {@code topic} null when the week has none; {@code editedByTeacher} and {@code hidden} only for the teacher (null
+     * for a student, who never gets a hidden week). {@code assignmentCount}: the course's assignments in the week.
+     */
+    public record WeekView(int week, String topic, long documentCount, Boolean editedByTeacher, long assignmentCount,
+                           Boolean hidden) {
+        public WeekView(int week, String topic, long documentCount, Boolean editedByTeacher) {
+            this(week, topic, documentCount, editedByTeacher, 0, null);
+        }
+    }
+
+    /** US-16 AC-4: PUT /courses/{id}/weeks/{week}/visibility; true hides the week and its documents from students. */
+    public record UpdateWeekVisibilityRequest(@NotNull Boolean hidden) {
     }
 
     public record UpdateWeeksCountRequest(

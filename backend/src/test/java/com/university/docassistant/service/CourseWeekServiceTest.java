@@ -62,7 +62,8 @@ class CourseWeekServiceTest {
     private final AiClientService ai = mock(AiClientService.class);
     private final WeekSuggestionService suggestions = mock(WeekSuggestionService.class);
     private final AccessControlService access = new AccessControlService(users, courses, documents, enrollments, audit);
-    private final CourseWeekService service = new CourseWeekService(access, documents, weeks, suggestions, ai, audit);
+    private final CourseWeekService service = new CourseWeekService(access, documents, mock(AssignmentRepository.class), weeks,
+            suggestions, ai, audit);
 
     private final User teacher = User.builder().id(2L).email("teacher@uni.kz").role(Role.ROLE_TEACHER).build();
     private final User otherTeacher = User.builder().id(3L).email("other@uni.kz").role(Role.ROLE_TEACHER).build();
@@ -197,7 +198,8 @@ class CourseWeekServiceTest {
                 mock(BatchImportRepository.class), mock(AssignmentService.class),
                 new DocumentPrivacyService(new PrivacyProperties(true, List.of())));
         lecture.setWeekNumber(null);
-        when(documents.findSummariesInCourses(any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), any()))
+        when(documents.findSummariesInCourses(any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), any(), any(),
+                any(), any()))
                 .thenReturn(new PageImpl<>(List.of(DocumentSummary.of(lecture))));
 
         List<DocumentResponse> forStudent = documentService.list("student@uni.kz", 10L, false, "none",
@@ -207,7 +209,8 @@ class CourseWeekServiceTest {
 
         assertThat(forStudent).singleElement().satisfies(row -> assertThat(row.suggestedWeek()).isNull());
         assertThat(forTeacher).singleElement().satisfies(row -> assertThat(row.suggestedWeek()).isEqualTo(4));
-        verify(documents).findSummariesInCourses(List.of(10L), false, 10L, false, null, true, PageRequest.of(0, 10));
+        verify(documents).findSummariesInCourses(List.of(10L), false, 10L, false, null, true, null, null, null,
+                PageRequest.of(0, 10));
         assertThat(documentService.get(50L, "student@uni.kz").suggestedWeek()).isNull();
         assertThat(documentService.get(50L, "teacher@uni.kz").suggestedWeek()).isEqualTo(4);
         assertError(() -> documentService.list("student@uni.kz", 10L, false, "0", PageRequest.of(0, 10)),

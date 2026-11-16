@@ -170,3 +170,7 @@ app:
     # Tries per AI call, the first one included, when the API answers 429 (rate limit) or 5xx. Waits for Retry-After
     # (at most 20 s) or else 2 s, 4 s, ... Other errors and timeouts are never retried. Missing or < 1 means 3.
     max-attempts: ${AI_MAX_ATTEMPTS:3}
+    # US-14: questions one user may ask the AI (assistant, course and document chats together) in the last hour and in
+    # the last 24 hours; over a limit the answer is 429 with the time of the next question. 0 turns a limit off.
+    questions-per-hour: ${AI_QUESTIONS_PER_HOUR:30}
+    questions-per-day: ${AI_QUESTIONS_PER_DAY:200}

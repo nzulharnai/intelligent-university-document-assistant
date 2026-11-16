@@ -34,6 +34,14 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
     @Query(AssignmentResponse.SELECT + "WHERE a.id = :id")
     Optional<AssignmentResponse> findViewById(@Param("id") Long id);
 
+    /** US-16: assignments per week of the course ([week or null, count]); students see all of a course's assignments. */
+    @Query("SELECT a.weekNumber, COUNT(a) FROM Assignment a WHERE a.course.id = :courseId GROUP BY a.weekNumber")
+    List<Object[]> countByWeek(@Param("courseId") Long courseId);
+
+    /** US-16: the highest week an assignment of the course is in; null when none has a week. */
+    @Query("SELECT MAX(a.weekNumber) FROM Assignment a WHERE a.course.id = :courseId")
+    Integer findMaxWeek(@Param("courseId") Long courseId);
+
     @Query("SELECT a FROM Assignment a WHERE a.sourceDocument.id = :documentId")
     List<Assignment> findBySourceDocumentId(@Param("documentId") Long documentId);
 

@@ -134,6 +134,15 @@ public final class ErrorCodes {
     public static final String AI_QUEUE_FULL = "AI_QUEUE_FULL";
     public static final String AI_NO_TEXT = "AI_NO_TEXT";
     public static final String AI_EXAM_ANSWERS_NOT_ANALYZED = "AI_EXAM_ANSWERS_NOT_ANALYZED";
+    /**
+     * US-14: 429, the user asked the AI as many questions as the hourly or daily limit allows; the message says when
+     * the next one can be asked and retryAfterSeconds how many seconds that is.
+     */
+    public static final String AI_QUESTION_LIMIT = "AI_QUESTION_LIMIT";
+    /** US-14: not one of the user's own saved conversations (also for others' ids, which reveal nothing). */
+    public static final String CONVERSATION_NOT_FOUND = "CONVERSATION_NOT_FOUND";
+    /** US-14: a conversation holds at most AiConversationService.MAX_TURNS questions; start a new one. */
+    public static final String CONVERSATION_FULL = "CONVERSATION_FULL";
 
     // --- Requests ---------------------------------------------------------------------------------------------------
     /** Some fields failed validation; {@link ErrorResponse#fieldErrors()} says which. */

@@ -38,14 +38,21 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
              AND (d.aiStatus = com.university.docassistant.entity.AiStatus.MANUAL
                   OR (d.aiStatus = com.university.docassistant.entity.AiStatus.DONE
                       AND (d.ocrStatus IS NULL
-                           OR d.ocrStatus <> com.university.docassistant.entity.OcrStatus.FAILED))))
+                           OR d.ocrStatus <> com.university.docassistant.entity.OcrStatus.FAILED)))
+             AND NOT EXISTS (SELECT hw.id FROM CourseWeek hw
+                             WHERE hw.course.id = d.course.id AND hw.weekNumber = d.weekNumber AND hw.hidden = TRUE))
             """;
 
-    /** The same rule in SQL, for the native queries here and in DocumentChunkRepository. */
+    /**
+     * The same rule in SQL, for the native queries here and in DocumentChunkRepository. US-16: a document in a week
+     * the teacher hid is not visible either (a document without a week never matches the hidden week).
+     */
     String VISIBLE_TO_STUDENTS_SQL = """
             (d.visibility <> 'TEACHER_ONLY'
              AND (d.ai_status = 'MANUAL'
-                  OR (d.ai_status = 'DONE' AND (d.ocr_status IS NULL OR d.ocr_status <> 'FAILED'))))
+                  OR (d.ai_status = 'DONE' AND (d.ocr_status IS NULL OR d.ocr_status <> 'FAILED')))
+             AND NOT EXISTS (SELECT 1 FROM course_weeks hw
+                             WHERE hw.course_id = d.course_id AND hw.week_number = d.week_number AND hw.hidden))
             """;
 
     /**
@@ -65,15 +72,28 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
      */
     String WEEK_FILTER = "(:week IS NULL OR d.weekNumber = :week) AND (:noWeek = FALSE OR d.weekNumber IS NULL)";
 
+    /**
+     * US-16 AC-5: {@code category} keeps one category (null: any); {@code uploadedFrom} (inclusive) and
+     * {@code uploadedTo} (exclusive) bound the upload time (null: open).
+     */
+    String CATEGORY_DATE_FILTER = """
+            (:category IS NULL OR d.category = :category)
+            AND (:uploadedFrom IS NULL OR d.uploadedAt >= :uploadedFrom)
+            AND (:uploadedTo IS NULL OR d.uploadedAt < :uploadedTo)
+            """;
+
     /** For ADMIN: every document; {@code courseId} null means all of them. */
     @Query(value = DocumentSummary.SELECT + "WHERE (:courseId IS NULL OR c.id = :courseId) AND " + NEEDS_REVIEW
-            + " AND " + WEEK_FILTER,
+            + " AND " + WEEK_FILTER + " AND " + CATEGORY_DATE_FILTER,
             countQuery = "SELECT COUNT(d) FROM Document d WHERE (:courseId IS NULL OR d.course.id = :courseId) AND "
-                    + NEEDS_REVIEW + " AND " + WEEK_FILTER)
+                    + NEEDS_REVIEW + " AND " + WEEK_FILTER + " AND " + CATEGORY_DATE_FILTER)
     Page<DocumentSummary> findAllSummaries(@Param("courseId") Long courseId,
                                            @Param("needsReview") boolean needsReview,
                                            @Param("week") Integer week,
                                            @Param("noWeek") boolean noWeek,
+                                           @Param("category") DocumentCategory category,
+                                           @Param("uploadedFrom") LocalDateTime uploadedFrom,
+                                           @Param("uploadedTo") LocalDateTime uploadedTo,
                                            Pageable pageable);
 
     /**
@@ -85,20 +105,37 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
             WHERE c.id IN :courseIds
               AND (:courseId IS NULL OR c.id = :courseId)
               AND (:includeTeacherOnly = TRUE OR """ + VISIBLE_TO_STUDENTS + ") AND " + NEEDS_REVIEW
-            + " AND " + WEEK_FILTER,
+            + " AND " + WEEK_FILTER + " AND " + CATEGORY_DATE_FILTER,
             countQuery = """
             SELECT COUNT(d) FROM Document d
             WHERE d.course.id IN :courseIds
               AND (:courseId IS NULL OR d.course.id = :courseId)
               AND (:includeTeacherOnly = TRUE OR """ + VISIBLE_TO_STUDENTS + ") AND " + NEEDS_REVIEW
-            + " AND " + WEEK_FILTER)
+            + " AND " + WEEK_FILTER + " AND " + CATEGORY_DATE_FILTER)
     Page<DocumentSummary> findSummariesInCourses(@Param("courseIds") Collection<Long> courseIds,
                                                  @Param("includeTeacherOnly") boolean includeTeacherOnly,
                                                  @Param("courseId") Long courseId,
                                                  @Param("needsReview") boolean needsReview,
                                                  @Param("week") Integer week,
                                                  @Param("noWeek") boolean noWeek,
+                                                 @Param("category") DocumentCategory category,
+                                                 @Param("uploadedFrom") LocalDateTime uploadedFrom,
+                                                 @Param("uploadedTo") LocalDateTime uploadedTo,
                                                  Pageable pageable);
+
+    /** {@link #findAllSummaries} without the category and date filters. */
+    default Page<DocumentSummary> findAllSummaries(Long courseId, boolean needsReview, Integer week, boolean noWeek,
+                                                   Pageable pageable) {
+        return findAllSummaries(courseId, needsReview, week, noWeek, null, null, null, pageable);
+    }
+
+    /** {@link #findSummariesInCourses} without the category and date filters. */
+    default Page<DocumentSummary> findSummariesInCourses(Collection<Long> courseIds, boolean includeTeacherOnly,
+                                                         Long courseId, boolean needsReview, Integer week,
+                                                         boolean noWeek, Pageable pageable) {
+        return findSummariesInCourses(courseIds, includeTeacherOnly, courseId, needsReview, week, noWeek, null, null,
+                null, pageable);
+    }
 
     @Query(DocumentSummary.SELECT + "WHERE d.id IN :ids")
     List<DocumentSummary> findSummariesByIdIn(@Param("ids") Collection<Long> ids);
@@ -252,6 +289,21 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
             WHERE d.id IN :ids
             """)
     List<StatusRow> findStatusRows(@Param("ids") Collection<Long> ids);
+
+    /** US-16: whether the document is in a week its course teacher hid from students. */
+    @Query(value = """
+            SELECT EXISTS (SELECT 1 FROM documents d
+                           JOIN course_weeks hw ON hw.course_id = d.course_id AND hw.week_number = d.week_number
+                           WHERE d.id = :id AND hw.hidden)
+            """, nativeQuery = true)
+    boolean isInHiddenWeek(@Param("id") Long id);
+
+    /** US-16: those of {@code ids} that are in a week hidden from students. */
+    @Query("""
+            SELECT d.id FROM Document d, CourseWeek hw
+            WHERE d.id IN :ids AND hw.course.id = d.course.id AND hw.weekNumber = d.weekNumber AND hw.hidden = TRUE
+            """)
+    List<Long> findIdsInHiddenWeeks(@Param("ids") Collection<Long> ids);
 
     /**
      * What background classification needs from a document, without loading the entity and its associations.

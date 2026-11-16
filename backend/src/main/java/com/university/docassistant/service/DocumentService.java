@@ -58,7 +58,10 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -553,9 +556,13 @@ public class DocumentService {
             return List.of();
         }
         Scope scope = access.scope(access.currentUser(email));
+        // US-16: a student learns nothing about documents in a week the teacher hid.
+        Set<Long> inHiddenWeeks = scope.includeTeacherOnly() ? Set.of()
+                : new HashSet<>(documentRepository.findIdsInHiddenWeeks(distinct));
         List<DocumentRepository.StatusRow> visible = documentRepository.findStatusRows(distinct).stream()
                 .filter(row -> AccessControlService.canView(scope, row.courseId(), row.visibility(), row.aiStatus(),
                         row.ocrStatus()))
+                .filter(row -> !inHiddenWeeks.contains(row.id()))
                 .toList();
         if (visible.isEmpty()) {
             return List.of();
@@ -724,6 +731,22 @@ public class DocumentService {
     @Transactional(readOnly = true)
     public PageResponse<DocumentResponse> list(String email, Long courseId, boolean needsReview, String week,
                                                Pageable pageable) {
+        return list(email, courseId, needsReview, week, null, null, null, pageable);
+    }
+
+    /**
+     * US-16 AC-5: also only one {@code category} and only documents uploaded from {@code uploadedFrom} to
+     * {@code uploadedTo} (both days included; null: open). A start after the end is 400 INVALID_PARAMETER.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<DocumentResponse> list(String email, Long courseId, boolean needsReview, String week,
+                                               DocumentCategory category, LocalDate uploadedFrom,
+                                               LocalDate uploadedTo, Pageable pageable) {
+        if (uploadedFrom != null && uploadedTo != null && uploadedFrom.isAfter(uploadedTo)) {
+            throw ApiException.badRequest(ErrorCodes.INVALID_PARAMETER, "Дата «с» позже даты «по»");
+        }
+        LocalDateTime from = uploadedFrom == null ? null : uploadedFrom.atStartOfDay();
+        LocalDateTime to = uploadedTo == null ? null : uploadedTo.plusDays(1).atStartOfDay();
         Integer weekNumber = null;
         boolean noWeek = false;
         if (week != null && !week.isBlank()) {
@@ -740,12 +763,13 @@ public class DocumentService {
         Scope scope = access.scope(user);
         Page<DocumentSummary> documents;
         if (scope.allCourses()) {
-            documents = documentRepository.findAllSummaries(courseId, needsReview, weekNumber, noWeek, pageable);
+            documents = documentRepository.findAllSummaries(courseId, needsReview, weekNumber, noWeek, category, from,
+                    to, pageable);
         } else if (scope.isEmpty()) {
             documents = Page.empty(pageable);
         } else {
             documents = documentRepository.findSummariesInCourses(scope.courseIds(), scope.includeTeacherOnly(),
-                    courseId, needsReview, weekNumber, noWeek, pageable);
+                    courseId, needsReview, weekNumber, noWeek, category, from, to, pageable);
         }
         Set<Long> managed = managedCourseIds(user, scope);
         return PageResponse.of(documents.map(document -> toResponse(document, user, canDelete(document, user, managed))));
